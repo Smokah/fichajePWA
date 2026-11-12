@@ -3,22 +3,23 @@
 import { generateRegistrationOptions, verifyRegistrationResponse } from "@simplewebauthn/server";
 import { createClient } from '@supabase/supabase-js';
 
-// Inicializamos Supabase para el entorno de servidor
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!, 
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// Variables requeridas por WebAuthn para evitar phishing
 const rpName = "Fichajes PWA";
 const rpID = process.env.NEXT_PUBLIC_RP_ID || "localhost";
 const origin = process.env.NEXT_PUBLIC_ORIGIN || `http://${rpID}:3000`;
 
 export async function generarOpcionesRegistro(empleadoId: string) {
+  // WebAuthn v10+ exige que el userID sea un Uint8Array
+  const userID = new TextEncoder().encode(empleadoId);
+
   const options = await generateRegistrationOptions({
     rpName,
     rpID,
-    userID: typeof Buffer !== 'undefined' ? Buffer.from(empleadoId).toString('base64') : empleadoId,
+    userID,
     userName: `empleado_${empleadoId}`,
     attestationType: "none",
     authenticatorSelection: {
@@ -40,16 +41,16 @@ export async function verificarRegistro(empleadoId: string, response: any, expec
     });
 
     if (verification.verified && verification.registrationInfo) {
-      const { credentialID, credentialPublicKey, counter } = verification.registrationInfo;
+      // En WebAuthn v10+ los datos están dentro de "credential"
+      const { credential } = verification.registrationInfo;
 
-      // Guardamos la credencial y la clave pública en formato Base64
       const { error } = await supabase
         .from('credenciales_biometricas')
         .insert([{
           empleado_id: empleadoId,
-          credential_id: Buffer.from(credentialID).toString('base64'),
-          public_key: Buffer.from(credentialPublicKey).toString('base64'),
-          counter: counter
+          credential_id: credential.id, // Ya viene como string Base64URL
+          public_key: Buffer.from(credential.publicKey).toString('base64'),
+          counter: credential.counter
         }]);
 
       if (error) return { success: false, error: error.message };

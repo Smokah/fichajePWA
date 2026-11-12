@@ -1,11 +1,15 @@
 import './globals.css';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
+
+// Nueva exportación requerida por Next.js para el color de la PWA
+export const viewport: Viewport = {
+  themeColor: '#16a34a',
+};
 
 export const metadata: Metadata = {
   title: 'Fichajes',
   description: 'Control de asistencia biométrico',
   manifest: '/manifest.json',
-  themeColor: '#16a34a',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',

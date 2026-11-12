@@ -8,7 +8,6 @@ export default function RegistroBiometrico() {
   const [estado, setEstado] = useState('');
   const [cargando, setCargando] = useState(false);
   
-  // MVP: Para pruebas, forzamos un ID. En producción vendrá de la sesión.
   const empleadoId = "ID_DEL_EMPLEADO_AQUI"; 
 
   const enrolarDispositivo = async () => {
@@ -18,8 +17,8 @@ export default function RegistroBiometrico() {
       const opciones = await generarOpcionesRegistro(empleadoId);
 
       setEstado('Por favor, usa tu huella o rostro para vincular este celular...');
-      // Levanta el prompt nativo de iOS/Android
-      const respuestaBiometrica = await startRegistration(opciones);
+      // WebAuthn v10+ requiere envolver las opciones en optionsJSON
+      const respuestaBiometrica = await startRegistration({ optionsJSON: opciones });
 
       setEstado('Guardando credencial en el servidor...');
       const resultado = await verificarRegistro(empleadoId, respuestaBiometrica, opciones.challenge);

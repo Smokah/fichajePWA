@@ -9,7 +9,7 @@ export default function PantallaFichaje() {
   const [isPending, startTransition] = useTransition();
   
   // Recuerda mantener el mismo ID con el que te registraste
-  const empleadoId = "EMPLEADO_test_2"; 
+  const empleadoId = "6e29ce97-c7bf-465d-9178-d644c2b00179"; 
 
   const registrarFichaje = (tipo: 'entrada' | 'salida') => {
     // startTransition maneja la promesa asíncrona sin romper la hidratación de React

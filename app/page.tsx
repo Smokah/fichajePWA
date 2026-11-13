@@ -1,53 +1,46 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import { startAuthentication } from '@simplewebauthn/browser';
 import { generarOpcionesAutenticacion, verificarAutenticacion } from './acciones';
 
 export default function PantallaFichaje() {
   const [estado, setEstado] = useState<string>('');
-  const [cargando, setCargando] = useState<boolean>(false);
+  const [isPending, startTransition] = useTransition();
   
-  // Debe coincidir con el ID que vinculaste en /registro
+  // Recuerda mantener el mismo ID con el que te registraste
   const empleadoId = "EMPLEADO_TEST_2"; 
 
-  const registrarFichaje = async (tipo: 'entrada' | 'salida') => {
-    setCargando(true);
-    setEstado('Validando identidad...');
+  const registrarFichaje = (tipo: 'entrada' | 'salida') => {
+    // startTransition maneja la promesa asíncrona sin romper la hidratación de React
+    startTransition(async () => {
+      setEstado('Validando identidad...');
 
-    try {
-      // 1. Pedimos al servidor el desafío criptográfico para este empleado
-      const opciones = await generarOpcionesAutenticacion(empleadoId);
+      try {
+        const opciones = await generarOpcionesAutenticacion(empleadoId);
+        setEstado('Por favor, usa tu huella o FaceID...');
+        
+        const respuestaBiometrica = await startAuthentication({ optionsJSON: opciones });
+        setEstado(`Registrando ${tipo} de forma segura...`);
+        
+        const resultado = await verificarAutenticacion(
+          empleadoId, 
+          respuestaBiometrica, 
+          opciones.challenge, 
+          tipo
+        );
 
-      setEstado('Por favor, usa tu huella o FaceID...');
-      
-      // 2. Invocamos el lector biométrico del celular
-      const respuestaBiometrica = await startAuthentication({ optionsJSON: opciones });
-
-      setEstado(`Registrando ${tipo} de forma segura...`);
-      
-      // 3. Enviamos la firma para verificar e insertar en Supabase
-      const resultado = await verificarAutenticacion(
-        empleadoId, 
-        respuestaBiometrica, 
-        opciones.challenge, 
-        tipo
-      );
-
-      if (resultado.success) {
-        setEstado(`¡${tipo.toUpperCase()} registrada exitosamente!`);
-        // Limpiar el mensaje de éxito después de 4 segundos para el próximo fichaje
-        setTimeout(() => setEstado(''), 4000);
-      } else {
-        setEstado(`Error al fichar: ${resultado.error}`);
+        if (resultado.success) {
+          setEstado(`¡${tipo.toUpperCase()} registrada exitosamente!`);
+          setTimeout(() => setEstado(''), 4000);
+        } else {
+          setEstado(`Error al fichar: ${resultado.error}`);
+        }
+      } catch (error: any) {
+        console.error(error);
+        setEstado(error.message || 'Fichaje cancelado o fallido.');
       }
-    } catch (error: any) {
-      console.error(error);
-      // Atrapa si el empleado cancela el prompt de la huella o no tiene credenciales
-      setEstado(error.message || 'Fichaje cancelado o fallido.');
-    } finally {
-      setCargando(false);
-    }
+    });
   };
 
   return (
@@ -60,7 +53,7 @@ export default function PantallaFichaje() {
       <div className="w-full max-w-sm space-y-6 mt-4">
         <button
           onClick={() => registrarFichaje('entrada')}
-          disabled={cargando}
+          disabled={isPending}
           className="w-full py-16 text-4xl font-extrabold text-white bg-green-600 rounded-[2rem] shadow-xl active:bg-green-700 active:scale-95 transition-all disabled:opacity-50"
         >
           ENTRADA
@@ -68,7 +61,7 @@ export default function PantallaFichaje() {
 
         <button
           onClick={() => registrarFichaje('salida')}
-          disabled={cargando}
+          disabled={isPending}
           className="w-full py-16 text-4xl font-extrabold text-white bg-red-600 rounded-[2rem] shadow-xl active:bg-red-700 active:scale-95 transition-all disabled:opacity-50"
         >
           SALIDA
@@ -78,7 +71,7 @@ export default function PantallaFichaje() {
       {estado && (
         <div className={`px-6 py-4 rounded-xl text-center w-full max-w-sm font-semibold shadow-sm transition-all ${
           estado.includes('exitosamente') ? 'bg-green-100 text-green-800' : 
-          estado.includes('Error') || estado.includes('cancelado') ? 'bg-red-100 text-red-800' : 
+          estado.includes('Error') || estado.includes('cancelado') || estado.includes('fallido') ? 'bg-red-100 text-red-800' : 
           'bg-blue-100 text-blue-800'
         }`}>
           {estado}

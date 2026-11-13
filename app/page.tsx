@@ -1,4 +1,5 @@
 "use client";
+
 import { useState, useTransition } from 'react';
 import { startAuthentication } from '@simplewebauthn/browser';
 import { generarOpcionesAutenticacion, verificarAutenticacion } from './acciones';
@@ -9,52 +10,52 @@ export default function PantallaFichaje() {
   const [isPending, startTransition] = useTransition();
 
   const registrarFichaje = (tipo: 'entrada' | 'salida') => {
-    if (!email) return setEstado('Ingresa tu correo para fichar.');
+    if (!email.trim()) return setEstado('Ingresá tu correo para fichar.');
 
     startTransition(async () => {
-      setEstado('Validando identidad...');
       try {
-        const opciones = await generarOpcionesAutenticacion(email);
-        setEstado('Usa tu huella o FaceID...');
-        
-        const respuestaBiometrica = await startAuthentication({ optionsJSON: opciones });
-        setEstado(`Registrando ${tipo}...`);
-        
-        const resultado = await verificarAutenticacion(email, respuestaBiometrica, opciones.challenge, tipo);
+        setEstado('Buscando tu Passkey...');
+        const { options, challengeId } = await generarOpcionesAutenticacion(email);
 
-        if (resultado.success) {
+        setEstado('Confirmá tu identidad con huella, Face ID o el bloqueo de pantalla...');
+        const response = await startAuthentication({ optionsJSON: options });
+
+        setEstado(`Registrando ${tipo}...`);
+        const result = await verificarAutenticacion(email, response, challengeId, tipo);
+
+        if (result.success) {
           setEstado(`¡${tipo.toUpperCase()} registrada exitosamente!`);
-          setTimeout(() => setEstado(''), 4000);
         } else {
-          setEstado(`Error: ${resultado.error}`);
+          setEstado(`Error: ${result.error}`);
         }
-      } catch (error: any) {
-        setEstado(error.message || 'Fichaje cancelado.');
+      } catch (error) {
+        setEstado(error instanceof Error ? error.message : 'Fichaje cancelado o no pudo completarse.');
       }
     });
   };
 
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4 space-y-8">
-      <div className="text-center space-y-1">
-        <h1 className="text-3xl font-bold text-gray-800 tracking-tight">Fichajes</h1>
-        <p className="text-gray-500">Control de Asistencia Biométrico</p>
+    <main className="flex min-h-screen flex-col items-center justify-center space-y-8 bg-gray-50 p-4">
+      <div className="space-y-1 text-center">
+        <h1 className="text-3xl font-bold tracking-tight text-gray-800">Fichajes</h1>
+        <p className="text-gray-500">Control de asistencia biométrico</p>
       </div>
 
-      <div className="w-full max-w-sm space-y-6 mt-4">
-        <input 
-          type="email" 
-          placeholder="tu@email.com" 
-          value={email} 
-          onChange={(e) => setEmail(e.target.value)}
+      <div className="mt-4 w-full max-w-sm space-y-6">
+        <input
+          type="email"
+          autoComplete="email"
+          placeholder="tu@email.com"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
           disabled={isPending}
-          className="w-full px-4 py-4 text-center text-xl font-medium text-gray-700 border-2 border-gray-300 rounded-2xl focus:outline-none focus:border-green-500"
+          className="w-full rounded-2xl border-2 border-gray-300 px-4 py-4 text-center text-xl font-medium text-gray-700 focus:border-green-500 focus:outline-none"
         />
 
         <button
           onClick={() => registrarFichaje('entrada')}
           disabled={isPending}
-          className="w-full py-12 text-4xl font-extrabold text-white bg-green-600 rounded-[2rem] shadow-xl active:scale-95 transition-all disabled:opacity-50"
+          className="w-full rounded-[2rem] bg-green-600 py-12 text-4xl font-extrabold text-white shadow-xl transition-all active:scale-95 disabled:opacity-50"
         >
           ENTRADA
         </button>
@@ -62,14 +63,14 @@ export default function PantallaFichaje() {
         <button
           onClick={() => registrarFichaje('salida')}
           disabled={isPending}
-          className="w-full py-12 text-4xl font-extrabold text-white bg-red-600 rounded-[2rem] shadow-xl active:scale-95 transition-all disabled:opacity-50"
+          className="w-full rounded-[2rem] bg-red-600 py-12 text-4xl font-extrabold text-white shadow-xl transition-all active:scale-95 disabled:opacity-50"
         >
           SALIDA
         </button>
       </div>
 
       {estado && (
-        <div className={`px-6 py-4 rounded-xl text-center w-full max-w-sm font-semibold shadow-sm ${estado.includes('exitosamente') ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-800'}`}>
+        <div role="status" aria-live="polite" className={`w-full max-w-sm rounded-xl px-6 py-4 text-center font-semibold shadow-sm ${estado.includes('exitosamente') ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-800'}`}>
           {estado}
         </div>
       )}

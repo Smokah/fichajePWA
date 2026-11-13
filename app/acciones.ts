@@ -18,13 +18,12 @@ const rpID = process.env.NEXT_PUBLIC_RP_ID || "localhost";
 const origin = process.env.NEXT_PUBLIC_ORIGIN || `http://${rpID}:3000`;
 
 // ==========================================
-// 1. LÓGICA DE REGISTRO (Vincular celular)
+// 1. REGISTRO
 // ==========================================
-
 export async function generarOpcionesRegistro(empleadoId: string) {
-  const userID = new TextEncoder().encode(empleadoId);
+  const userID = new Uint8Array(Buffer.from(empleadoId));
 
-  const options = await generateRegistrationOptions({
+  return await generateRegistrationOptions({
     rpName,
     rpID,
     userID,
@@ -35,8 +34,6 @@ export async function generarOpcionesRegistro(empleadoId: string) {
       residentKey: "required",
     },
   });
-
-  return options;
 }
 
 export async function verificarRegistro(empleadoId: string, response: any, expectedChallenge: string) {
@@ -51,60 +48,57 @@ export async function verificarRegistro(empleadoId: string, response: any, expec
     if (verification.verified && verification.registrationInfo) {
       const { credential } = verification.registrationInfo;
 
+      // FIX: Guardamos los bytes crudos como Array para evitar corrupciones de Base64
+      const publicKeyJSON = JSON.stringify(Array.from(credential.publicKey));
+
       const { error } = await supabase
         .from('credenciales_biometricas')
         .insert([{
           empleado_id: empleadoId,
           credential_id: credential.id,
-          public_key: Buffer.from(credential.publicKey).toString('base64'),
+          public_key: publicKeyJSON,
           counter: credential.counter
         }]);
 
-      if (error) return { success: false, error: error.message };
+      if (error) return { success: false, error: `Error BD: ${error.message}` };
       return { success: true };
     }
   } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: false, error: `Fallo WebAuthn (Alta): ${error.message}` };
   }
-  
-  return { success: false, error: "Verificación fallida" };
+  return { success: false, error: "Verificación de registro fallida" };
 }
 
 // ==========================================
-// 2. LÓGICA DE FICHAJE (Entrada / Salida)
+// 2. FICHAJE
 // ==========================================
-
 export async function generarOpcionesAutenticacion(empleadoId: string) {
-  // Buscamos las credenciales vinculadas a este empleado
   const { data: credenciales, error } = await supabase
     .from('credenciales_biometricas')
     .select('credential_id')
     .eq('empleado_id', empleadoId);
 
   if (error || !credenciales || credenciales.length === 0) {
-    throw new Error('No tienes ningún celular vinculado. Debes registrarte primero.');
+    throw new Error('No tienes ningún celular vinculado. Regístrate primero.');
   }
 
-  const options = await generateAuthenticationOptions({
+  return await generateAuthenticationOptions({
     rpID,
     userVerification: "required",
     allowCredentials: credenciales.map(cred => ({
       id: cred.credential_id,
-      type: 'public-key' as const,
+      type: 'public-key',
     })),
   });
-
-  return options;
 }
 
 export async function verificarAutenticacion(
   empleadoId: string, 
   response: any, 
   expectedChallenge: string, 
-  tipoFichaje: 'entrada' | 'salida'
+  tipoFichaje: string
 ) {
   try {
-    // Traemos la credencial exacta que usó el celular desde Supabase
     const { data: credencial, error: credError } = await supabase
       .from('credenciales_biometricas')
       .select('*')
@@ -112,8 +106,12 @@ export async function verificarAutenticacion(
       .single();
 
     if (credError || !credencial) {
-      return { success: false, error: 'Credencial no reconocida.' };
+      return { success: false, error: 'Credencial no encontrada en la BD.' };
     }
+
+    // FIX: Reconstruimos la llave pública exacta a partir del Array puro
+    const publicKeyArray = JSON.parse(credencial.public_key);
+    const publicKeyUint8 = new Uint8Array(publicKeyArray);
 
     const verification = await verifyAuthenticationResponse({
       response,
@@ -122,34 +120,35 @@ export async function verificarAutenticacion(
       expectedRPID: rpID,
       credential: {
         id: credencial.credential_id,
-        publicKey: new Uint8Array(Buffer.from(credencial.public_key, 'base64')),
+        publicKey: publicKeyUint8,
         counter: Number(credencial.counter),
-        transports: [],
       },
     });
 
     if (verification.verified) {
-      // 1. Actualizamos el contador de seguridad de WebAuthn
+      // Actualizamos contador de seguridad
       await supabase
         .from('credenciales_biometricas')
         .update({ counter: verification.authenticationInfo.newCounter })
         .eq('credential_id', credencial.credential_id);
 
-      // 2. IMPACTAMOS EL FICHAJE EN LA BASE DE DATOS
+      // Guardamos el fichaje forzando minúsculas para Postgres
       const { error: fichajeError } = await supabase
         .from('fichajes')
         .insert([{
           empleado_id: empleadoId,
-          tipo: tipoFichaje
-          // hora_registro se asigna sola por el default now() de la BD
+          tipo: tipoFichaje.toLowerCase() 
         }]);
 
-      if (fichajeError) return { success: false, error: fichajeError.message };
+      // Si vemos este mensaje, la criptografía funcionó perfecto pero Postgres falló
+      if (fichajeError) {
+        return { success: false, error: `Huella Correcta, pero falló BD: ${fichajeError.message}` };
+      }
       
       return { success: true };
     }
   } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: false, error: `Fallo WebAuthn (Comparación): ${error.message}` };
   }
   
   return { success: false, error: "Firma biométrica inválida" };

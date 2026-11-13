@@ -8,7 +8,7 @@ export default function RegistroBiometrico() {
   const [estado, setEstado] = useState('');
   const [cargando, setCargando] = useState(false);
   
-  const empleadoId = "ID_DEL_EMPLEADO_AQUI"; 
+  const empleadoId = "EMPLEADO_test_2"; 
 
   const enrolarDispositivo = async () => {
     setCargando(true);

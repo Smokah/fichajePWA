@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { startAuthentication } from '@simplewebauthn/browser';
-import { generarOpcionesAutenticacion, verificarAutenticacion } from './acciones';
+import { generarOpcionesAutenticacion, verificarAutenticacion } from './actions/fichaje';
 
 const STORAGE_EMAIL_KEY = 'fichajes_pwa_empleado_email';
 
@@ -61,7 +61,7 @@ export default function PantallaFichaje() {
           ¿Primer día? Vincular celular
         </Link>
         <Link href="/panel" className="underline hover:text-gray-800">
-          Panel Dueño
+          Panel Administrativo
         </Link>
       </div>
 

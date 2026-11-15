@@ -1,15 +1,17 @@
 -- ============================================================================
--- ESQUEMA COMPLETO Y MIGRACIÓN PARA PWA DE FICHAJES (EJECUTAR EN SUPABASE SQL EDITOR)
+-- ESQUEMA MODULAR Y MIGRACIÓN PARA PWA DE FICHAJES + PANEL ADMINISTRATIVO
+-- Ejecutar en Supabase > SQL Editor
 -- ============================================================================
 
 create extension if not exists pgcrypto with schema extensions;
 
--- 1. Tablas base (si no existían o les faltaban columnas)
+-- 1. Sucursales
 create table if not exists public.sucursales (
   id serial primary key,
   nombre text not null
 );
 
+-- 2. Empleados
 create table if not exists public.empleados (
   id uuid primary key default gen_random_uuid(),
   nombre text not null,
@@ -18,20 +20,11 @@ create table if not exists public.empleados (
   created_at timestamptz not null default now()
 );
 
--- Asegurar columnas y defaults en empleados por si se creó con el script inicial
 alter table public.empleados alter column id set default gen_random_uuid();
 alter table public.empleados add column if not exists email text;
 alter table public.empleados add column if not exists created_at timestamptz not null default now();
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint where conname = 'empleados_email_key'
-  ) then
-    alter table public.empleados add constraint empleados_email_key unique (email);
-  end if;
-exception when others then null;
-end $$;
 
+-- 3. Credenciales Biométricas (WebAuthn)
 create table if not exists public.credenciales_biometricas (
   id uuid primary key default gen_random_uuid(),
   empleado_id uuid not null references public.empleados(id) on delete cascade,
@@ -41,6 +34,7 @@ create table if not exists public.credenciales_biometricas (
   created_at timestamptz not null default now()
 );
 
+-- 4. Fichajes
 create table if not exists public.fichajes (
   id serial primary key,
   empleado_id uuid not null references public.empleados(id) on delete cascade,
@@ -48,7 +42,6 @@ create table if not exists public.fichajes (
   hora_registro timestamptz not null default now()
 );
 
--- Eliminar check constraint restrictivo de mayúsculas en fichajes.tipo si existía ('Entrada'/'Salida')
 do $$
 declare
   r record;
@@ -64,7 +57,7 @@ end $$;
 alter table public.fichajes
   add constraint fichajes_tipo_check check (lower(tipo) in ('entrada', 'salida'));
 
--- 2. Challenges de WebAuthn
+-- 5. Challenges WebAuthn
 create table if not exists public.webauthn_challenges (
   id uuid primary key default gen_random_uuid(),
   employee_id uuid not null references public.empleados(id) on delete cascade,
@@ -76,12 +69,10 @@ create table if not exists public.webauthn_challenges (
   created_at timestamptz not null default now()
 );
 
-create index if not exists webauthn_challenges_expiration_idx
-  on public.webauthn_challenges (expires_at);
-create index if not exists webauthn_challenges_employee_purpose_idx
-  on public.webauthn_challenges (employee_id, purpose);
+create index if not exists webauthn_challenges_expiration_idx on public.webauthn_challenges (expires_at);
+create index if not exists webauthn_challenges_employee_purpose_idx on public.webauthn_challenges (employee_id, purpose);
 
--- 3. Códigos de alta por sucursal
+-- 6. Códigos de Alta por Sucursal
 create table if not exists public.codigos_alta_sucursal (
   id uuid primary key default gen_random_uuid(),
   sucursal_id integer not null references public.sucursales(id) on delete cascade,
@@ -94,10 +85,19 @@ create table if not exists public.codigos_alta_sucursal (
   constraint codigos_alta_sucursal_usos_limite check (usos <= max_usos)
 );
 
-create index if not exists codigos_alta_sucursal_sucursal_idx
-  on public.codigos_alta_sucursal (sucursal_id);
+-- 7. Usuarios Administrativos (CRUD de Operadores / RRHH / Supervisores)
+create table if not exists public.usuarios_admin (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null,
+  email text not null unique,
+  pin_hash text not null,
+  rol text not null default 'operador' check (rol in ('superadmin', 'administrativo', 'supervisor')),
+  sucursal_id integer references public.sucursales(id) on delete set null,
+  activo boolean not null default true,
+  created_at timestamptz not null default now()
+);
 
--- 4. RPC transaccional de alta
+-- 8. Función RPC transaccional de alta de empleados
 create or replace function public.registrar_empleado_con_codigo_sucursal(
   p_nombre text,
   p_email text,
@@ -178,13 +178,14 @@ $$;
 revoke all on function public.registrar_empleado_con_codigo_sucursal(text, text, text) from public, anon, authenticated;
 grant execute on function public.registrar_empleado_con_codigo_sucursal(text, text, text) to service_role;
 
--- 5. Seguridad RLS (todo pasa por el servidor con service_role)
+-- 9. RLS y Permisos
 alter table public.sucursales enable row level security;
 alter table public.empleados enable row level security;
 alter table public.webauthn_challenges enable row level security;
 alter table public.codigos_alta_sucursal enable row level security;
 alter table public.credenciales_biometricas enable row level security;
 alter table public.fichajes enable row level security;
+alter table public.usuarios_admin enable row level security;
 
 revoke all on table public.sucursales from anon, authenticated;
 revoke all on table public.empleados from anon, authenticated;
@@ -192,6 +193,7 @@ revoke all on table public.webauthn_challenges from anon, authenticated;
 revoke all on table public.codigos_alta_sucursal from anon, authenticated;
 revoke all on table public.credenciales_biometricas from anon, authenticated;
 revoke all on table public.fichajes from anon, authenticated;
+revoke all on table public.usuarios_admin from anon, authenticated;
 
 grant all on table public.sucursales to service_role;
 grant all on table public.empleados to service_role;
@@ -199,9 +201,12 @@ grant all on table public.webauthn_challenges to service_role;
 grant all on table public.codigos_alta_sucursal to service_role;
 grant all on table public.credenciales_biometricas to service_role;
 grant all on table public.fichajes to service_role;
+grant all on table public.usuarios_admin to service_role;
 grant usage, select on all sequences in schema public to service_role;
 
--- 6. Datos iniciales: Crear "Sucursal Central" si no existe ninguna
+-- 10. Sucursal inicial por defecto
 insert into public.sucursales (nombre)
 select 'Sucursal Central'
 where not exists (select 1 from public.sucursales);
+
+notify pgrst, 'reload schema';

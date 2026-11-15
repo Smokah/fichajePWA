@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { startRegistration } from '@simplewebauthn/browser';
-import { iniciarAltaEmpleado, verificarRegistro } from '../acciones';
+import { iniciarAltaEmpleado, verificarRegistro } from '../actions/fichaje';
 
 const STORAGE_EMAIL_KEY = 'fichajes_pwa_empleado_email';
 

@@ -16,128 +16,139 @@ export default function RegistroBiometrico() {
   const [isPending, startTransition] = useTransition();
 
   const enrolarDispositivo = () => {
-    if (nombre.trim().length < 2) return setEstado('Ingresá tu nombre y apellido.');
+    if (nombre.trim().length < 2) return setEstado('Ingresá tu nombre y apellido completo.');
     if (!email.trim()) return setEstado('Ingresá tu correo electrónico.');
     if (!/^[a-fA-F0-9]{16}$/.test(codigo.trim())) {
-      return setEstado('Ingresá el código de sucursal de 16 caracteres que te entregó el administrador.');
+      return setEstado('El código de habilitación debe tener 16 caracteres.');
     }
 
     startTransition(async () => {
       try {
         setCompletado(false);
-        setEstado('Validando el código de sucursal y creando tu registro...');
+        setEstado('Validando código de sucursal...');
         const { options, challengeId, empleadoNombre } = await iniciarAltaEmpleado(nombre, email, codigo);
 
-        setEstado(`Hola ${empleadoNombre}. Confirmá tu identidad con huella, Face ID o el bloqueo de pantalla...`);
+        setEstado(`Hola ${empleadoNombre}. Confirmá tu huella o bloqueo en el dispositivo...`);
         const response = await startRegistration({ optionsJSON: options });
 
-        setEstado('Verificando y guardando tu Passkey...');
+        setEstado('Guardando credencial de seguridad...');
         const result = await verificarRegistro(email, response, challengeId);
 
         if (result.success) {
           window.localStorage.setItem(STORAGE_EMAIL_KEY, email.trim().toLowerCase());
           setCompletado(true);
-          setEstado('¡Alta completada! Tu celular quedó vinculado y ya podés fichar.');
+          setEstado('Dispositivo vinculado correctamente. Ya podés registrar asistencia.');
           setCodigo('');
         } else {
-          setEstado(`Error: ${result.error}`);
+          setEstado(result.error);
         }
       } catch (error) {
-        setEstado(error instanceof Error ? error.message : 'No se pudo completar el registro.');
+        setEstado(error instanceof Error ? error.message : 'No se pudo completar la vinculación.');
       }
     });
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center space-y-6 bg-gray-50 p-6">
-      <div className="w-full max-w-sm">
-        <Link href="/" className="text-xs text-gray-500 underline hover:text-gray-800">
-          ← Volver a Fichar
+    <main className="flex min-h-screen flex-col justify-between bg-slate-50 px-5 py-6">
+      <header className="mx-auto flex w-full max-w-md items-center justify-between border-b border-slate-200 pb-4">
+        <Link href="/" className="text-xs font-medium text-slate-600 hover:text-slate-900">
+          ← Volver a Terminal
         </Link>
-      </div>
+        <span className="text-xs font-semibold text-slate-400">Alta de Personal</span>
+      </header>
 
-      <div className="w-full max-w-sm space-y-2 text-center">
-        <h1 className="text-2xl font-bold text-gray-800">Alta de empleado</h1>
-        <p className="text-sm text-gray-600">
-          Ingresá tus datos y el código de tu sucursal para vincular tu huella o Face ID.
-        </p>
-      </div>
+      <section className="mx-auto my-auto w-full max-w-md">
+        <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm space-y-6">
+          <div className="border-b border-slate-100 pb-4">
+            <h1 className="text-lg font-semibold text-slate-900">Vinculación de Dispositivo</h1>
+            <p className="text-xs text-slate-500 mt-1">
+              Completá tus datos y el código provisto por Recursos Humanos para habilitar tu terminal móvil.
+            </p>
+          </div>
 
-      <div className="w-full max-w-sm space-y-4">
-        <label className="block space-y-1">
-          <span className="text-sm font-medium text-gray-700">Nombre y apellido</span>
-          <input
-            type="text"
-            autoComplete="name"
-            placeholder="Ej: Juan Pérez"
-            value={nombre}
-            onChange={(event) => setNombre(event.target.value)}
-            disabled={isPending}
-            maxLength={120}
-            className="w-full rounded-xl border-2 border-gray-300 bg-white px-4 py-3.5 text-center text-lg focus:border-blue-500 focus:outline-none"
-          />
-        </label>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Nombre y apellido</label>
+              <input
+                type="text"
+                autoComplete="name"
+                placeholder="Ej: Martín Gómez"
+                value={nombre}
+                onChange={(event) => setNombre(event.target.value)}
+                disabled={isPending}
+                maxLength={120}
+                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus:border-slate-900 focus:outline-none"
+              />
+            </div>
 
-        <label className="block space-y-1">
-          <span className="text-sm font-medium text-gray-700">Correo electrónico</span>
-          <input
-            type="email"
-            autoComplete="email"
-            placeholder="tu@email.com"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            disabled={isPending}
-            maxLength={254}
-            className="w-full rounded-xl border-2 border-gray-300 bg-white px-4 py-3.5 text-center text-lg focus:border-blue-500 focus:outline-none"
-          />
-        </label>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Correo electrónico</label>
+              <input
+                type="email"
+                autoComplete="email"
+                placeholder="martin.gomez@empresa.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                disabled={isPending}
+                maxLength={254}
+                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus:border-slate-900 focus:outline-none"
+              />
+            </div>
 
-        <label className="block space-y-1">
-          <span className="text-sm font-medium text-gray-700">Código de sucursal (16 caracteres)</span>
-          <input
-            type="text"
-            inputMode="text"
-            autoComplete="one-time-code"
-            autoCapitalize="none"
-            spellCheck={false}
-            maxLength={16}
-            placeholder="Ej: a1b2c3d4e5f60718"
-            value={codigo}
-            onChange={(event) => setCodigo(event.target.value.replace(/[^a-fA-F0-9]/g, '').slice(0, 16))}
-            disabled={isPending}
-            className="w-full rounded-xl border-2 border-gray-300 bg-white px-4 py-3.5 text-center font-mono text-lg uppercase tracking-widest focus:border-blue-500 focus:outline-none"
-          />
-        </label>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Código de sucursal</label>
+              <input
+                type="text"
+                inputMode="text"
+                autoComplete="one-time-code"
+                autoCapitalize="none"
+                spellCheck={false}
+                maxLength={16}
+                placeholder="16 caracteres alfanuméricos"
+                value={codigo}
+                onChange={(event) => setCodigo(event.target.value.replace(/[^a-fA-F0-9]/g, '').slice(0, 16))}
+                disabled={isPending}
+                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 font-mono text-sm uppercase tracking-widest text-slate-900 focus:border-slate-900 focus:outline-none"
+              />
+            </div>
 
-        <button
-          onClick={enrolarDispositivo}
-          disabled={isPending}
-          className="w-full rounded-2xl bg-blue-600 py-4 text-lg font-bold text-white shadow-md transition-colors hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50"
-        >
-          {isPending ? 'Procesando...' : 'Vincular celular y huella'}
-        </button>
-      </div>
+            <button
+              onClick={enrolarDispositivo}
+              disabled={isPending}
+              className="w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:opacity-50"
+            >
+              {isPending ? 'Validando...' : 'Vincular Dispositivo'}
+            </button>
+          </div>
 
-      {estado && (
-        <div
-          role="status"
-          aria-live="polite"
-          className={`w-full max-w-sm rounded-xl px-4 py-3 text-center text-sm font-medium ${
-            completado ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-gray-200 text-gray-800'
-          }`}
-        >
-          {estado}
+          {estado && (
+            <div
+              role="status"
+              aria-live="polite"
+              className={`rounded-xl border px-4 py-3 text-xs font-medium ${
+                completado
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                  : 'border-slate-200 bg-slate-50 text-slate-700'
+              }`}
+            >
+              {estado}
+            </div>
+          )}
+
+          {completado && (
+            <Link
+              href="/"
+              className="block w-full rounded-xl border border-slate-900 bg-white py-2.5 text-center text-xs font-semibold text-slate-900 hover:bg-slate-50"
+            >
+              Ir a registrar asistencia →
+            </Link>
+          )}
         </div>
-      )}
+      </section>
 
-      {completado && (
-        <Link
-          href="/"
-          className="w-full max-w-sm rounded-2xl bg-green-600 py-3.5 text-center text-base font-bold text-white shadow hover:bg-green-700"
-        >
-          Ir a Fichar ahora →
-        </Link>
-      )}
+      <footer className="mx-auto w-full max-w-md text-center text-[11px] text-slate-400">
+        Uso exclusivo personal autorizado
+      </footer>
     </main>
   );
 }

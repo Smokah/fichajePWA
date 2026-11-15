@@ -48,83 +48,106 @@ export default function PanelAdministrativo() {
           usuariosAdmin: res.usuariosAdmin,
         });
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Error de autenticación');
+        setError(e instanceof Error ? e.message : 'Credenciales inválidas');
       }
     });
   };
 
   if (!session || !datos) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center bg-gray-100 p-6">
-        <div className="w-full max-w-sm rounded-3xl bg-white p-8 shadow-xl space-y-5">
-          <div className="text-center space-y-1">
-            <h1 className="text-2xl font-bold text-gray-900">Panel Administrativo</h1>
-            <p className="text-xs text-gray-500">
-              Dueño: dejá el correo vacío e ingresá el PIN maestro (1234).<br />
-              Administrativos: ingresá tu correo y PIN asignado.
-            </p>
+      <main className="flex min-h-screen flex-col justify-between bg-slate-50 px-5 py-6">
+        <header className="mx-auto flex w-full max-w-sm items-center justify-between border-b border-slate-200 pb-4">
+          <Link href="/" className="text-xs font-medium text-slate-600 hover:text-slate-900">
+            ← Terminal de Fichaje
+          </Link>
+          <span className="text-xs font-semibold text-slate-400">Acceso Corporativo</span>
+        </header>
+
+        <section className="mx-auto my-auto w-full max-w-sm">
+          <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm space-y-6">
+            <div className="border-b border-slate-100 pb-4">
+              <h1 className="text-lg font-semibold text-slate-900">Consola de Administración</h1>
+              <p className="text-xs text-slate-500 mt-1">
+                Dirección General: ingresar únicamente PIN maestro.<br />
+                Operadores RRHH: ingresar correo y PIN asignado.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Correo del operador</label>
+                <input
+                  type="email"
+                  placeholder="Opcional para Dirección General"
+                  value={identificador}
+                  onChange={(e) => setIdentificador(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus:border-slate-900 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">PIN de seguridad</label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  placeholder="••••"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && cargarDatos()}
+                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-center font-mono text-lg tracking-[0.35em] text-slate-900 focus:border-slate-900 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={() => cargarDatos()}
+              disabled={isPending}
+              className="w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50"
+            >
+              {isPending ? 'Verificando...' : 'Iniciar Sesión'}
+            </button>
+
+            {error && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-center text-xs font-medium text-rose-900">
+                {error}
+              </div>
+            )}
           </div>
+        </section>
 
-          <div className="space-y-3">
-            <input
-              type="email"
-              placeholder="Correo administrativo (opcional para Dueño)"
-              value={identificador}
-              onChange={(e) => setIdentificador(e.target.value)}
-              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-gray-900 focus:outline-none"
-            />
-            <input
-              type="password"
-              inputMode="numeric"
-              placeholder="PIN de acceso"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && cargarDatos()}
-              className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 text-center text-2xl tracking-widest focus:border-gray-900 focus:outline-none"
-            />
-          </div>
-
-          <button
-            onClick={() => cargarDatos()}
-            disabled={isPending}
-            className="w-full rounded-xl bg-gray-900 py-3.5 text-base font-bold text-white hover:bg-black disabled:opacity-50"
-          >
-            {isPending ? 'Ingresando...' : 'Acceder al Panel'}
-          </button>
-
-          {error && <p className="text-center text-sm font-medium text-red-600">{error}</p>}
-
-          <div className="text-center">
-            <Link href="/" className="text-xs text-gray-500 underline">
-              ← Volver al fichador
-            </Link>
-          </div>
-        </div>
+        <footer className="mx-auto w-full max-w-sm text-center text-[11px] text-slate-400">
+          AccesoMóvil Enterprise · Gestión de Tiempo y Asistencia
+        </footer>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-gray-100 p-4 md:p-8">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-white p-6 shadow-sm">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-gray-900">Panel Administrativo</h1>
-              <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-bold uppercase text-indigo-800">
-                {session.rol}
-              </span>
+    <main className="min-h-screen bg-slate-50">
+      {/* Top Navbar Empresarial */}
+      <header className="border-b border-slate-200 bg-white print:border-none">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-4 md:px-8">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-xs font-bold tracking-wider text-white">
+              AM
             </div>
-            <p className="text-xs text-gray-500">Sesión activa: {session.nombre}</p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base font-semibold text-slate-900">Gestión de Asistencia</h1>
+                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium capitalize text-slate-700 ring-1 ring-inset ring-slate-300/60">
+                  {session.rol}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">{session.nombre}</p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 print:hidden">
             <button
               onClick={() => cargarDatos()}
               disabled={isPending}
-              className="rounded-xl bg-green-600 px-4 py-2 text-xs font-bold text-white hover:bg-green-700 disabled:opacity-50"
+              className="rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
-              {isPending ? 'Sincronizando...' : '↻ Actualizar Datos'}
+              {isPending ? 'Actualizando...' : 'Sincronizar'}
             </button>
             <button
               onClick={() => {
@@ -132,16 +155,67 @@ export default function PanelAdministrativo() {
                 setDatos(null);
                 setPin('');
               }}
-              className="rounded-xl border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              className="rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
             >
-              Salir
+              Cerrar Sesión
             </button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-end gap-4 rounded-2xl bg-white p-4 shadow-sm">
+        {/* Pestañas de Navegación Corporativa */}
+        <div className="mx-auto max-w-6xl px-4 md:px-8 print:hidden">
+          <nav className="-mb-px flex space-x-6 overflow-x-auto">
+            <button
+              onClick={() => setTab('reportes')}
+              className={`whitespace-nowrap border-b-2 py-3 text-xs font-semibold transition-colors ${
+                tab === 'reportes'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
+              }`}
+            >
+              Informes y Horas
+            </button>
+            <button
+              onClick={() => setTab('registros')}
+              className={`whitespace-nowrap border-b-2 py-3 text-xs font-semibold transition-colors ${
+                tab === 'registros'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
+              }`}
+            >
+              Registro de Marcas ({datos.fichajes.length})
+            </button>
+            <button
+              onClick={() => setTab('sucursales')}
+              className={`whitespace-nowrap border-b-2 py-3 text-xs font-semibold transition-colors ${
+                tab === 'sucursales'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
+              }`}
+            >
+              Personal y Sucursales ({datos.empleados.length})
+            </button>
+            {session.rol === 'superadmin' && (
+              <button
+                onClick={() => setTab('admins')}
+                className={`whitespace-nowrap border-b-2 py-3 text-xs font-semibold transition-colors ${
+                  tab === 'admins'
+                    ? 'border-slate-900 text-slate-900'
+                    : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                }`}
+              >
+                Operadores Administrativos
+              </button>
+            )}
+          </nav>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-8">
+        {/* Barra de Filtros */}
+        <div className="flex flex-wrap items-end gap-4 rounded-xl border border-slate-200 bg-white p-4 print:hidden">
           <div>
-            <label className="block text-[11px] font-semibold uppercase text-gray-500 mb-1">Desde</label>
+            <label className="block text-[11px] font-medium text-slate-500 mb-1">Fecha desde</label>
             <input
               type="date"
               value={fechaDesde}
@@ -149,11 +223,11 @@ export default function PanelAdministrativo() {
                 setFechaDesde(e.target.value);
                 cargarDatos(e.target.value, fechaHasta, sucursalFiltro);
               }}
-              className="rounded-xl border border-gray-300 px-3 py-1.5 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-800 focus:border-slate-900 focus:outline-none"
             />
           </div>
           <div>
-            <label className="block text-[11px] font-semibold uppercase text-gray-500 mb-1">Hasta</label>
+            <label className="block text-[11px] font-medium text-slate-500 mb-1">Fecha hasta</label>
             <input
               type="date"
               value={fechaHasta}
@@ -161,19 +235,19 @@ export default function PanelAdministrativo() {
                 setFechaHasta(e.target.value);
                 cargarDatos(fechaDesde, e.target.value, sucursalFiltro);
               }}
-              className="rounded-xl border border-gray-300 px-3 py-1.5 text-sm"
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-800 focus:border-slate-900 focus:outline-none"
             />
           </div>
           {!session.sucursal_id && (
             <div>
-              <label className="block text-[11px] font-semibold uppercase text-gray-500 mb-1">Sucursal</label>
+              <label className="block text-[11px] font-medium text-slate-500 mb-1">Sucursal</label>
               <select
                 value={sucursalFiltro}
                 onChange={(e) => {
                   setSucursalFiltro(e.target.value);
                   cargarDatos(fechaDesde, fechaHasta, e.target.value);
                 }}
-                className="rounded-xl border border-gray-300 px-3 py-1.5 text-sm bg-white"
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-800 bg-white focus:border-slate-900 focus:outline-none"
               >
                 <option value="TODAS">Todas las sucursales</option>
                 {datos.sucursales.map((s) => (
@@ -186,45 +260,13 @@ export default function PanelAdministrativo() {
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-2">
-          <button
-            onClick={() => setTab('reportes')}
-            className={`rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
-              tab === 'reportes' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            📊 Reportes y Horas
-          </button>
-          <button
-            onClick={() => setTab('registros')}
-            className={`rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
-              tab === 'registros' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            🕒 Fichajes ({datos.fichajes.length})
-          </button>
-          <button
-            onClick={() => setTab('sucursales')}
-            className={`rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
-              tab === 'sucursales' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            🏢 Sucursales y Empleados
-          </button>
-          {session.rol === 'superadmin' && (
-            <button
-              onClick={() => setTab('admins')}
-              className={`rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
-                tab === 'admins' ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-700 hover:bg-indigo-50'
-              }`}
-            >
-              🔐 Usuarios Administrativos (CRUD)
-            </button>
-          )}
-        </div>
-
+        {/* Vistas Modulares */}
         {tab === 'reportes' && (
-          <ReportesTab fichajes={datos.fichajes} totalEmpleados={datos.empleados.length} />
+          <ReportesTab
+            fichajes={datos.fichajes}
+            totalEmpleados={datos.empleados.length}
+            rangoFechas={{ desde: fechaDesde, hasta: fechaHasta }}
+          />
         )}
 
         {tab === 'registros' && (

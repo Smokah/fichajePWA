@@ -1,11 +1,11 @@
 {
-  "name": "Sistema de Fichajes",
-  "short_name": "Fichajes",
-  "description": "Control de asistencia biométrico móvil",
+  "name": "AccesoMóvil · Control de Asistencia",
+  "short_name": "AccesoMóvil",
+  "description": "Sistema corporativo de control de asistencia",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f9fafb",
-  "theme_color": "#16a34a",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
   "icons": [
     {
       "src": "/icon-192x192.png",

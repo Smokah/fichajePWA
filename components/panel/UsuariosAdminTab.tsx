@@ -50,7 +50,7 @@ export function UsuariosAdminTab({
             activo: true,
             pinNuevo: pinNuevo || undefined,
           });
-          setMensaje('Usuario administrativo actualizado.');
+          setMensaje('Permisos actualizados correctamente.');
         } else {
           await crearUsuarioAdmin(credenciales, {
             nombre,
@@ -59,12 +59,12 @@ export function UsuariosAdminTab({
             rol,
             sucursalId,
           });
-          setMensaje('Usuario administrativo creado correctamente.');
+          setMensaje('Operador administrativo creado.');
         }
         limpiarFormulario();
         onRefresh();
       } catch (e) {
-        setMensaje(e instanceof Error ? e.message : 'Error guardando usuario.');
+        setMensaje(e instanceof Error ? e.message : 'Error guardando operador.');
       }
     });
   };
@@ -96,32 +96,31 @@ export function UsuariosAdminTab({
   };
 
   const handleEliminar = (u: any) => {
-    if (!confirm(`¿Eliminar definitivamente al usuario administrativo ${u.nombre}?`)) return;
+    if (!confirm(`¿Revocar y eliminar permanentemente el acceso de ${u.nombre}?`)) return;
     startTransition(async () => {
       try {
         await eliminarUsuarioAdmin(credenciales, u.id);
         onRefresh();
       } catch (e) {
-        setMensaje(e instanceof Error ? e.message : 'Error eliminando usuario.');
+        setMensaje(e instanceof Error ? e.message : 'Error eliminando operador.');
       }
     });
   };
 
   return (
     <div className="space-y-6">
-      {/* Formulario Crear / Editar */}
-      <div className="rounded-2xl bg-white p-6 shadow-sm space-y-4">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold text-gray-800">
-              {editandoId ? 'Editar Usuario Administrativo' : 'Crear Usuario Administrativo'}
+            <h2 className="text-base font-semibold text-slate-900">
+              {editandoId ? 'Modificar Operador' : 'Alta de Operador Administrativo'}
             </h2>
-            <p className="text-xs text-gray-500">
-              Permite que encargados de RRHH o supervisores accedan al panel para consultar reportes y horas.
+            <p className="text-xs text-slate-500">
+              Asignación de credenciales para personal de RRHH o encargados de sucursal
             </p>
           </div>
           {editandoId && (
-            <button onClick={limpiarFormulario} className="text-xs text-gray-500 underline">
+            <button onClick={limpiarFormulario} className="text-xs text-slate-500 underline">
               Cancelar edición
             </button>
           )}
@@ -130,40 +129,40 @@ export function UsuariosAdminTab({
         <div className="grid gap-3 md:grid-cols-5">
           <input
             type="text"
-            placeholder="Nombre y Apellido"
+            placeholder="Nombre y apellido"
             value={nombre}
             onChange={(e) => setNombre(e.target.value)}
-            className="rounded-xl border border-gray-300 px-3 py-2.5 text-sm"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-slate-900 focus:outline-none"
           />
           <input
             type="email"
-            placeholder="Correo de acceso"
+            placeholder="Correo corporativo"
             value={email}
             disabled={!!editandoId}
             onChange={(e) => setEmail(e.target.value)}
-            className="rounded-xl border border-gray-300 px-3 py-2.5 text-sm disabled:bg-gray-100"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-xs disabled:bg-slate-100 focus:border-slate-900 focus:outline-none"
           />
           <input
             type="password"
             inputMode="numeric"
-            placeholder={editandoId ? 'Nuevo PIN (opcional)' : 'PIN (4-8 dígitos)'}
+            placeholder={editandoId ? 'Nuevo PIN (opcional)' : 'PIN numérico (4-8)'}
             value={pinNuevo}
             onChange={(e) => setPinNuevo(e.target.value.replace(/\D/g, '').slice(0, 8))}
-            className="rounded-xl border border-gray-300 px-3 py-2.5 text-sm"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-slate-900 focus:outline-none"
           />
           <select
             value={rol}
             onChange={(e) => setRol(e.target.value)}
-            className="rounded-xl border border-gray-300 px-3 py-2.5 text-sm bg-white"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-xs bg-white focus:border-slate-900 focus:outline-none"
           >
             <option value="administrativo">Administrativo (RRHH)</option>
-            <option value="supervisor">Supervisor de Sucursal</option>
-            <option value="superadmin">Superadmin (Total)</option>
+            <option value="supervisor">Supervisor de Sede</option>
+            <option value="superadmin">Superadmin</option>
           </select>
           <select
             value={sucursalId}
             onChange={(e) => setSucursalId(e.target.value)}
-            className="rounded-xl border border-gray-300 px-3 py-2.5 text-sm bg-white"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-xs bg-white focus:border-slate-900 focus:outline-none"
           >
             <option value="TODAS">Todas las sucursales</option>
             {sucursales.map((s) => (
@@ -178,58 +177,59 @@ export function UsuariosAdminTab({
           <button
             onClick={handleGuardar}
             disabled={isPending}
-            className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+            className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
           >
-            {isPending ? 'Guardando...' : editandoId ? 'Actualizar Usuario' : '+ Crear Usuario Administrativo'}
+            {isPending ? 'Guardando...' : editandoId ? 'Guardar Cambios' : 'Crear Operador'}
           </button>
-          {mensaje && <p className="text-sm font-medium text-blue-700">{mensaje}</p>}
+          {mensaje && <p className="text-xs font-medium text-slate-700">{mensaje}</p>}
         </div>
       </div>
 
-      {/* Tabla CRUD */}
-      <div className="rounded-2xl bg-white p-6 shadow-sm space-y-4">
-        <h3 className="text-base font-bold text-gray-800">Usuarios con Acceso al Panel ({usuariosAdmin.length})</h3>
+      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+        <h3 className="text-base font-semibold text-slate-900">Operadores Habilitados ({usuariosAdmin.length})</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-xs uppercase text-gray-500">
-                <th className="py-3 px-2">Nombre</th>
-                <th className="py-3 px-2">Correo</th>
-                <th className="py-3 px-2">Rol</th>
-                <th className="py-3 px-2">Alcance</th>
-                <th className="py-3 px-2">Estado</th>
-                <th className="py-3 px-2 text-right">Acciones</th>
+              <tr className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <th className="py-3 px-3">Operador</th>
+                <th className="py-3 px-3">Correo</th>
+                <th className="py-3 px-3">Perfil</th>
+                <th className="py-3 px-3">Jurisdicción</th>
+                <th className="py-3 px-3">Estado</th>
+                <th className="py-3 px-3 text-right">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-slate-100">
               {usuariosAdmin.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-gray-400">
-                    No hay usuarios administrativos secundarios creados todavía.
+                  <td colSpan={6} className="py-8 text-center text-xs text-slate-400">
+                    No hay operadores secundarios configurados.
                   </td>
                 </tr>
               ) : (
                 usuariosAdmin.map((u) => (
-                  <tr key={u.id} className="hover:bg-gray-50">
-                    <td className="py-3 px-2 font-medium text-gray-900">{u.nombre}</td>
-                    <td className="py-3 px-2 text-gray-600">{u.email}</td>
-                    <td className="py-3 px-2 uppercase text-xs font-bold text-indigo-700">{u.rol}</td>
-                    <td className="py-3 px-2 text-gray-600">{u.sucursales?.nombre || 'Todas'}</td>
-                    <td className="py-3 px-2">
+                  <tr key={u.id} className="hover:bg-slate-50/80">
+                    <td className="py-3 px-3 font-medium text-slate-900">{u.nombre}</td>
+                    <td className="py-3 px-3 text-slate-600">{u.email}</td>
+                    <td className="py-3 px-3 capitalize text-xs font-medium text-slate-700">{u.rol}</td>
+                    <td className="py-3 px-3 text-slate-600">{u.sucursales?.nombre || 'Global'}</td>
+                    <td className="py-3 px-3">
                       <button
                         onClick={() => handleToggleActivo(u)}
-                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          u.activo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
+                          u.activo
+                            ? 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-600/20'
+                            : 'bg-rose-50 text-rose-800 ring-1 ring-inset ring-rose-600/20'
                         }`}
                       >
                         {u.activo ? 'Activo' : 'Suspendido'}
                       </button>
                     </td>
-                    <td className="py-3 px-2 text-right space-x-3">
-                      <button onClick={() => iniciarEdicion(u)} className="text-xs text-blue-600 underline">
+                    <td className="py-3 px-3 text-right space-x-3 text-xs font-medium">
+                      <button onClick={() => iniciarEdicion(u)} className="text-slate-700 underline hover:text-slate-950">
                         Editar
                       </button>
-                      <button onClick={() => handleEliminar(u)} className="text-xs text-red-600 underline">
+                      <button onClick={() => handleEliminar(u)} className="text-rose-700 underline hover:text-rose-900">
                         Eliminar
                       </button>
                     </td>

@@ -11,28 +11,23 @@ export interface AdminSession {
   sucursal_id: number | null;
 }
 
-/**
- * Autentica tanto al Dueño (con ADMIN_PIN maestro) como a Usuarios Administrativos creados en el CRUD.
- */
 export async function autenticarAdmin(identificador: string, pin: string): Promise<AdminSession> {
   const cleanPin = String(pin ?? '').trim();
   const cleanId = String(identificador ?? '').trim().toLowerCase();
   if (!cleanPin) throw new Error('Ingresá tu PIN de acceso.');
 
-  // 1. Acceso maestro del Dueño (si deja el email vacío o pone "admin" / "dueno")
   const masterPin = (process.env.ADMIN_PIN || '1234').trim();
   if ((!cleanId || cleanId === 'admin' || cleanId === 'dueno') && cleanPin === masterPin) {
     return {
       id: 'master-owner',
-      nombre: 'Dueño / Administrador General',
+      nombre: 'Dirección General',
       email: 'admin@sistema.local',
       rol: 'superadmin',
       sucursal_id: null,
     };
   }
 
-  // 2. Acceso de Usuarios Administrativos registrados en Supabase
-  if (!cleanId) throw new Error('Ingresá tu correo administrativo o usá el PIN maestro.');
+  if (!cleanId) throw new Error('Ingresá tu correo corporativo o usá la clave maestra.');
 
   const supabase = getSupabaseAdmin();
   const pinHash = await sha256Hex(cleanPin);
@@ -43,8 +38,8 @@ export async function autenticarAdmin(identificador: string, pin: string): Promi
     .eq('email', cleanId)
     .maybeSingle();
 
-  if (error) throw new Error('Error verificando credenciales administrativas.');
-  if (!user || !user.activo) throw new Error('Usuario administrativo inexistente o desactivado.');
+  if (error) throw new Error('Error verificando credenciales.');
+  if (!user || !user.activo) throw new Error('Usuario inexistente o suspendido.');
   if (user.pin_hash !== pinHash) throw new Error('PIN incorrecto.');
 
   return {
@@ -59,7 +54,7 @@ export async function autenticarAdmin(identificador: string, pin: string): Promi
 async function verificarAutorizacion(credenciales: { identificador: string; pin: string }, requiereSuperadmin = false) {
   const session = await autenticarAdmin(credenciales.identificador, credenciales.pin);
   if (requiereSuperadmin && session.rol !== 'superadmin') {
-    throw new Error('Esta acción requiere permisos de Superadmin / Dueño.');
+    throw new Error('Operación restringida a Superadmin.');
   }
   return session;
 }
@@ -75,7 +70,7 @@ export async function obtenerDatosAdministrativos(
     .from('fichajes')
     .select('id, tipo, hora_registro, empleado_id, empleados(nombre, email, sucursal_id, sucursales(nombre))')
     .order('hora_registro', { ascending: false })
-    .limit(500);
+    .limit(1000);
 
   if (filtros?.fechaDesde) {
     queryFichajes = queryFichajes.gte('hora_registro', `${filtros.fechaDesde}T00:00:00.000Z`);
@@ -103,7 +98,6 @@ export async function obtenerDatosAdministrativos(
   if (empleadosRes.error) throw new Error(empleadosRes.error.message);
   if (fichajesRes.error) throw new Error(fichajesRes.error.message);
 
-  // Si es supervisor asignado a una sucursal específica, filtrar sus datos
   const sucursalForzada = session.sucursal_id ? String(session.sucursal_id) : filtros?.sucursalId;
 
   let fichajes = fichajesRes.data ?? [];
@@ -123,6 +117,42 @@ export async function obtenerDatosAdministrativos(
   };
 }
 
+// --- CRUD EMPLEADOS ---
+
+export async function editarEmpleadoAdmin(
+  credenciales: { identificador: string; pin: string },
+  empleadoId: string,
+  datos: { nombre: string; email: string; sucursalId: number | null }
+) {
+  await verificarAutorizacion(credenciales);
+  const nombre = normalizeName(datos.nombre);
+  const email = normalizeEmail(datos.email);
+  const sucursalId = datos.sucursalId ? Number(datos.sucursalId) : null;
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from('empleados')
+    .update({ nombre, email, sucursal_id: sucursalId })
+    .eq('id', empleadoId);
+
+  if (error) {
+    if (error.message.includes('duplicate')) throw new Error('Ya existe otro empleado con ese correo.');
+    throw new Error('No se pudo actualizar el empleado: ' + error.message);
+  }
+  return { success: true };
+}
+
+export async function eliminarEmpleadoAdmin(
+  credenciales: { identificador: string; pin: string },
+  empleadoId: string
+) {
+  await verificarAutorizacion(credenciales);
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from('empleados').delete().eq('id', empleadoId);
+  if (error) throw new Error('No se pudo eliminar el empleado: ' + error.message);
+  return { success: true };
+}
+
 // --- CRUD USUARIOS ADMINISTRATIVOS ---
 
 export async function crearUsuarioAdmin(
@@ -135,7 +165,7 @@ export async function crearUsuarioAdmin(
   const pinNuevo = String(datos.pinNuevo ?? '').trim();
 
   if (!/^\d{4,8}$/.test(pinNuevo)) {
-    throw new Error('El PIN del usuario administrativo debe tener entre 4 y 8 números.');
+    throw new Error('El PIN debe tener entre 4 y 8 dígitos.');
   }
 
   const rolValido = ['superadmin', 'administrativo', 'supervisor'].includes(datos.rol)
@@ -156,8 +186,8 @@ export async function crearUsuarioAdmin(
   });
 
   if (error) {
-    if (error.message.includes('duplicate')) throw new Error('Ya existe un usuario administrativo con ese correo.');
-    throw new Error('Error creando usuario administrativo: ' + error.message);
+    if (error.message.includes('duplicate')) throw new Error('Ya existe un usuario con ese correo.');
+    throw new Error('Error creando usuario: ' + error.message);
   }
   return { success: true };
 }
@@ -183,7 +213,7 @@ export async function actualizarUsuarioAdmin(
 
   if (datos.pinNuevo && datos.pinNuevo.trim()) {
     const cleanPin = datos.pinNuevo.trim();
-    if (!/^\d{4,8}$/.test(cleanPin)) throw new Error('El nuevo PIN debe tener entre 4 y 8 números.');
+    if (!/^\d{4,8}$/.test(cleanPin)) throw new Error('El nuevo PIN debe tener entre 4 y 8 dígitos.');
     updatePayload.pin_hash = await sha256Hex(cleanPin);
   }
 
@@ -201,7 +231,7 @@ export async function eliminarUsuarioAdmin(credenciales: { identificador: string
   return { success: true };
 }
 
-// --- OPERACIONES DE SUCURSALES, CÓDIGOS Y PASSKEYS ---
+// --- SUCURSALES, CÓDIGOS Y PASSKEYS ---
 
 export async function crearSucursalAdmin(credenciales: { identificador: string; pin: string }, nombre: string) {
   await verificarAutorizacion(credenciales);

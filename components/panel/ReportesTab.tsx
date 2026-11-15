@@ -6,9 +6,10 @@ import { calcularEstadisticasEmpleados, formatearDuracion, type FichajeRaw } fro
 interface ReportesTabProps {
   fichajes: FichajeRaw[];
   totalEmpleados: number;
+  rangoFechas: { desde: string; hasta: string };
 }
 
-export function ReportesTab({ fichajes, totalEmpleados }: ReportesTabProps) {
+export function ReportesTab({ fichajes, totalEmpleados, rangoFechas }: ReportesTabProps) {
   const resumenEmpleados = useMemo(() => calcularEstadisticasEmpleados(fichajes), [fichajes]);
 
   const kpis = useMemo(() => {
@@ -23,8 +24,9 @@ export function ReportesTab({ fichajes, totalEmpleados }: ReportesTabProps) {
     };
   }, [resumenEmpleados, fichajes.length]);
 
-  const exportarCSV = () => {
-    const headers = ['Empleado', 'Email', 'Sucursal', 'Entradas', 'Salidas', 'Total Horas', 'Minutos Totales', 'Estado Actual'];
+  const exportarCSVResumen = () => {
+    const sep = ';'; // Punto y coma para apertura directa en Excel en español
+    const headers = ['Empleado', 'Correo', 'Sucursal', 'Entradas', 'Salidas', 'Horas Trabajadas', 'Minutos', 'Estado'];
     const rows = resumenEmpleados.map((r) => [
       `"${r.nombre}"`,
       `"${r.email}"`,
@@ -35,97 +37,144 @@ export function ReportesTab({ fichajes, totalEmpleados }: ReportesTabProps) {
       r.totalMinutos,
       `"${r.estadoActual}"`,
     ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const bom = '\uFEFF';
+    const csvContent = bom + [headers.join(sep), ...rows.map((e) => e.join(sep))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `reporte_horas_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
+    link.href = url;
+    link.download = `informe_horas_${rangoFechas.desde}_a_${rangoFechas.hasta}.csv`;
     link.click();
-    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const exportarCSVDetallado = () => {
+    const sep = ';';
+    const headers = ['ID', 'Empleado', 'Correo', 'Sucursal', 'Movimiento', 'Fecha', 'Hora'];
+    const rows = fichajes.map((f) => {
+      const dt = new Date(f.hora_registro);
+      return [
+        f.id,
+        `"${f.empleados?.nombre || ''}"`,
+        `"${f.empleados?.email || ''}"`,
+        `"${f.empleados?.sucursales?.nombre || 'Sin sucursal'}"`,
+        `"${String(f.tipo).toUpperCase()}"`,
+        `"${dt.toLocaleDateString('es-AR')}"`,
+        `"${dt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}"`,
+      ];
+    });
+    const bom = '\uFEFF';
+    const csvContent = bom + [headers.join(sep), ...rows.map((e) => e.join(sep))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `detalle_marcas_${rangoFechas.desde}_a_${rangoFechas.hasta}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const imprimirPDF = () => {
+    window.print();
   };
 
   return (
     <div className="space-y-6">
-      {/* Tarjetas de Estadísticas (KPIs) */}
+      {/* KPIs sobrios */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <div className="rounded-2xl bg-white p-5 shadow-sm border border-gray-100">
-          <p className="text-xs font-medium text-gray-500 uppercase">Horas Acumuladas</p>
-          <p className="mt-2 text-2xl font-extrabold text-gray-900">{kpis.totalHoras}</p>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <p className="text-xs font-medium text-slate-500">Horas Computadas</p>
+          <p className="mt-2 font-mono text-2xl font-semibold text-slate-900">{kpis.totalHoras}</p>
         </div>
-        <div className="rounded-2xl bg-white p-5 shadow-sm border border-gray-100">
-          <p className="text-xs font-medium text-gray-500 uppercase">Activos en Turno</p>
-          <p className="mt-2 text-2xl font-extrabold text-green-600">
-            {kpis.enTurno} <span className="text-sm font-normal text-gray-400">/ {totalEmpleados}</span>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <p className="text-xs font-medium text-slate-500">Personal en Turno</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
+            {kpis.enTurno} <span className="text-sm font-normal text-slate-400">/ {totalEmpleados}</span>
           </p>
         </div>
-        <div className="rounded-2xl bg-white p-5 shadow-sm border border-gray-100">
-          <p className="text-xs font-medium text-gray-500 uppercase">Fichajes en Período</p>
-          <p className="mt-2 text-2xl font-extrabold text-blue-600">{kpis.totalRegistros}</p>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <p className="text-xs font-medium text-slate-500">Total de Marcas</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{kpis.totalRegistros}</p>
         </div>
-        <div className="rounded-2xl bg-white p-5 shadow-sm border border-gray-100">
-          <p className="text-xs font-medium text-gray-500 uppercase">Turnos Sin Cerrar (+16h)</p>
-          <p className={`mt-2 text-2xl font-extrabold ${kpis.incompletos > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <p className="text-xs font-medium text-slate-500">Jornadas Abiertas (+16h)</p>
+          <p className={`mt-2 text-2xl font-semibold ${kpis.incompletos > 0 ? 'text-amber-700' : 'text-slate-900'}`}>
             {kpis.incompletos}
           </p>
         </div>
       </div>
 
-      {/* Tabla de Cálculo de Horas por Empleado */}
-      <div className="rounded-2xl bg-white p-6 shadow-sm space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Tabla Resumen + Barra de Exportación */}
+      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
-            <h2 className="text-lg font-bold text-gray-800">Cálculo de Horas Trabajadas</h2>
-            <p className="text-xs text-gray-500">Emparejamiento automático de Entrada y Salida en el rango seleccionado</p>
+            <h2 className="text-base font-semibold text-slate-900">Consolidado de Horas por Empleado</h2>
+            <p className="text-xs text-slate-500">
+              Período: {rangoFechas.desde} al {rangoFechas.hasta}
+            </p>
           </div>
-          <button
-            onClick={exportarCSV}
-            className="rounded-xl bg-gray-900 px-4 py-2 text-xs font-semibold text-white hover:bg-black"
-          >
-            ↓ Exportar Reporte Excel (CSV)
-          </button>
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <button
+              onClick={exportarCSVResumen}
+              className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              Exportar Resumen (CSV)
+            </button>
+            <button
+              onClick={exportarCSVDetallado}
+              className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              Exportar Marcas Detalladas (CSV)
+            </button>
+            <button
+              onClick={imprimirPDF}
+              className="rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-medium text-white hover:bg-slate-800 transition-colors"
+            >
+              Imprimir / Guardar PDF
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-xs uppercase text-gray-500">
-                <th className="py-3 px-2">Empleado</th>
-                <th className="py-3 px-2">Sucursal</th>
-                <th className="py-3 px-2 text-center">Entradas / Salidas</th>
-                <th className="py-3 px-2">Horas Totales</th>
-                <th className="py-3 px-2">Estado</th>
+              <tr className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <th className="py-3 px-3">Colaborador</th>
+                <th className="py-3 px-3">Sucursal</th>
+                <th className="py-3 px-3 text-center">Marcas (E/S)</th>
+                <th className="py-3 px-3">Total Horas</th>
+                <th className="py-3 px-3 text-right">Estado</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-slate-100">
               {resumenEmpleados.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-400">
-                    No hay suficientes registros en este rango de fechas para calcular horas.
+                  <td colSpan={5} className="py-10 text-center text-xs text-slate-400">
+                    No existen registros en el período seleccionado.
                   </td>
                 </tr>
               ) : (
                 resumenEmpleados.map((r) => (
-                  <tr key={r.empleadoId} className="hover:bg-gray-50">
-                    <td className="py-3 px-2">
-                      <p className="font-semibold text-gray-900">{r.nombre}</p>
-                      <p className="text-xs text-gray-400">{r.email}</p>
+                  <tr key={r.empleadoId} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3.5 px-3">
+                      <p className="font-medium text-slate-900">{r.nombre}</p>
+                      <p className="text-xs text-slate-500">{r.email}</p>
                     </td>
-                    <td className="py-3 px-2 text-gray-600">{r.sucursal}</td>
-                    <td className="py-3 px-2 text-center font-mono text-xs text-gray-600">
-                      {r.cantidadEntradas} E / {r.cantidadSalidas} S
+                    <td className="py-3.5 px-3 text-slate-600">{r.sucursal}</td>
+                    <td className="py-3.5 px-3 text-center font-mono text-xs text-slate-600">
+                      {r.cantidadEntradas} / {r.cantidadSalidas}
                     </td>
-                    <td className="py-3 px-2 font-mono text-base font-bold text-gray-900">
+                    <td className="py-3.5 px-3 font-mono text-sm font-semibold text-slate-900">
                       {r.horasFormateadas}
                     </td>
-                    <td className="py-3 px-2">
+                    <td className="py-3.5 px-3 text-right">
                       <span
-                        className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
                           r.estadoActual === 'En turno'
-                            ? 'bg-green-100 text-green-800'
+                            ? 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-600/20'
                             : r.estadoActual === 'Incompleto'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-gray-100 text-gray-600'
+                            ? 'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-600/20'
+                            : 'bg-slate-100 text-slate-600'
                         }`}
                       >
                         {r.estadoActual}

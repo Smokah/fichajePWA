@@ -1,19 +1,18 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
 
-// Nueva exportación requerida por Next.js para el color de la PWA
 export const viewport: Viewport = {
-  themeColor: '#16a34a',
+  themeColor: '#0f172a',
 };
 
 export const metadata: Metadata = {
-  title: 'Fichajes',
-  description: 'Control de asistencia biométrico',
+  title: 'AccesoMóvil · Control de Asistencia',
+  description: 'Plataforma corporativa de gestión horaria y validación biométrica',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'default',
-    title: 'Fichajes',
+    statusBarStyle: 'black-translucent',
+    title: 'AccesoMóvil',
   },
 };
 
@@ -23,24 +22,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es">
-      <body>
+    <html lang="es" className="antialiased">
+      <body className="bg-slate-50 text-slate-900 selection:bg-slate-900 selection:text-white">
         {children}
-        
-        {/* Registro manual del Service Worker */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js').then(
-                    function(registration) {
-                      console.log('Service Worker registrado con éxito');
-                    },
-                    function(err) {
-                      console.log('Fallo al registrar Service Worker: ', err);
-                    }
-                  );
+                  navigator.serviceWorker.register('/sw.js').catch(function() {});
                 });
               }
             `,

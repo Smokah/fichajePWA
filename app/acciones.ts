@@ -56,10 +56,18 @@ function normalizeEmail(email: string): string {
   return normalized;
 }
 
-function normalizeEnrollmentCode(code: string): string {
+function normalizeBranchCode(code: string): string {
   const normalized = String(code ?? '').trim().toLowerCase();
   if (!/^[a-f0-9]{16}$/.test(normalized)) {
-    throw new Error('El código de vinculación debe tener 16 caracteres hexadecimales.');
+    throw new Error('El código de sucursal debe tener 16 caracteres hexadecimales.');
+  }
+  return normalized;
+}
+
+function normalizeName(name: string): string {
+  const normalized = String(name ?? '').trim().replace(/\s+/g, ' ');
+  if (normalized.length < 2 || normalized.length > 120) {
+    throw new Error('Ingresá tu nombre y apellido (entre 2 y 120 caracteres).');
   }
   return normalized;
 }
@@ -91,7 +99,6 @@ async function guardarChallenge(args: {
   empleadoId: string;
   purpose: ChallengePurpose;
   challenge: string;
-  enrollmentCodeHash?: string;
 }): Promise<string> {
   const supabase = getSupabaseAdmin();
   const challengeId = crypto.randomUUID();
@@ -110,7 +117,6 @@ async function guardarChallenge(args: {
     employee_id: args.empleadoId,
     purpose: args.purpose,
     challenge: args.challenge,
-    enrollment_code_hash: args.enrollmentCodeHash ?? null,
     expires_at: expiresAt,
   });
 
@@ -127,7 +133,7 @@ async function consumirChallenge(
   challengeId: string,
   empleadoId: string,
   purpose: ChallengePurpose,
-): Promise<{ challenge: string; enrollment_code_hash: string | null }> {
+): Promise<{ challenge: string }> {
   if (!/^[0-9a-f-]{36}$/i.test(String(challengeId ?? ''))) {
     throw new Error('La operación expiró o no es válida. Volvé a intentarlo.');
   }
@@ -142,7 +148,7 @@ async function consumirChallenge(
     .eq('purpose', purpose)
     .is('consumed_at', null)
     .gt('expires_at', now)
-    .select('challenge, enrollment_code_hash')
+    .select('challenge')
     .maybeSingle();
 
   if (error) {
@@ -153,47 +159,47 @@ async function consumirChallenge(
   return data;
 }
 
-async function consumirCodigoAlta(empleadoId: string, codeHash: string): Promise<void> {
-  const supabase = getSupabaseAdmin();
-  const now = new Date().toISOString();
-  const { data, error } = await supabase
-    .from('codigos_alta_webauthn')
-    .update({ used_at: now })
-    .eq('empleado_id', empleadoId)
-    .eq('codigo_hash', codeHash)
-    .is('used_at', null)
-    .gt('expires_at', now)
-    .select('empleado_id')
-    .maybeSingle();
-
-  if (error) {
-    console.error('Error consumiendo código de alta:', error);
-    throw new Error('No se pudo validar el código de vinculación.');
-  }
-  if (!data) throw new Error('El código de vinculación venció o ya fue utilizado. Pedí uno nuevo al administrador.');
-}
-
-export async function generarOpcionesRegistro(email: string, enrollmentCode: string) {
-  const empleado = await getEmpleado(email);
-  const code = normalizeEnrollmentCode(enrollmentCode);
+/**
+ * Alta pública controlada: el código identifica la sucursal; el RPC crea el empleado
+ * atómicamente y consume un cupo. Si el empleado ya fue creado en esa sucursal y
+ * el alta biométrica quedó interrumpida, el RPC permite reintentar sin consumir otro cupo.
+ */
+export async function iniciarAltaEmpleado(nombre: string, email: string, branchCode: string) {
+  const normalizedName = normalizeName(nombre);
+  const normalizedEmail = normalizeEmail(email);
+  const code = normalizeBranchCode(branchCode);
   const codeHash = await sha256Hex(code);
   const supabase = getSupabaseAdmin();
-  const now = new Date().toISOString();
 
-  const { data: enrollmentCodeRow, error: codeError } = await supabase
-    .from('codigos_alta_webauthn')
-    .select('codigo_hash')
-    .eq('empleado_id', empleado.id)
-    .eq('codigo_hash', codeHash)
-    .is('used_at', null)
-    .gt('expires_at', now)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('registrar_empleado_con_codigo_sucursal', {
+    p_nombre: normalizedName,
+    p_email: normalizedEmail,
+    p_codigo_hash: codeHash,
+  });
 
-  if (codeError) {
-    console.error('Error consultando código de alta:', codeError);
-    throw new Error('No se pudo validar el código. Aplicá la migración SQL incluida en el ZIP.');
+  if (error) {
+    console.error('Error validando código de sucursal / creando empleado:', error);
+    const message = String(error.message ?? '');
+    if (message.includes('CODIGO_SUCURSAL_INVALIDO')) {
+      throw new Error('El código de sucursal es incorrecto, está vencido o fue revocado.');
+    }
+    if (message.includes('CODIGO_SUCURSAL_SIN_CUPOS')) {
+      throw new Error('El código de esta sucursal alcanzó el máximo de altas permitido.');
+    }
+    if (message.includes('EMAIL_OTRA_SUCURSAL')) {
+      throw new Error('Este correo ya está registrado en otra sucursal.');
+    }
+    if (message.includes('EMAIL_DUPLICADO')) {
+      throw new Error('Hay más de un empleado con ese correo. Contactá al administrador.');
+    }
+    console.error('Detalle RPC alta:', error.details, error.hint, error.code);
+    throw new Error('No se pudo completar el alta. Verificá que hayas aplicado la migración SQL nueva.');
   }
-  if (!enrollmentCodeRow) throw new Error('Código de vinculación incorrecto o vencido.');
+
+  const empleado = Array.isArray(data) ? data[0] : data;
+  if (!empleado?.id || !empleado?.nombre) {
+    throw new Error('Supabase no devolvió los datos del empleado creado.');
+  }
 
   const { data: existingCredentials, error: credentialsError } = await supabase
     .from('credenciales_biometricas')
@@ -202,7 +208,10 @@ export async function generarOpcionesRegistro(email: string, enrollmentCode: str
 
   if (credentialsError) {
     console.error('Error consultando credenciales existentes:', credentialsError);
-    throw new Error('No se pudieron consultar las credenciales existentes.');
+    throw new Error('No se pudieron consultar las Passkeys existentes.');
+  }
+  if (existingCredentials && existingCredentials.length > 0) {
+    throw new Error('Este empleado ya tiene una Passkey registrada. Para cambiar de dispositivo, solicitá asistencia al administrador.');
   }
 
   const { rpID } = getWebAuthnConfig();
@@ -210,12 +219,9 @@ export async function generarOpcionesRegistro(email: string, enrollmentCode: str
     rpName: RP_NAME,
     rpID,
     userID: new Uint8Array(Buffer.from(empleado.id, 'utf8')),
-    userName: normalizeEmail(email),
-    userDisplayName: empleado.nombre || normalizeEmail(email),
+    userName: normalizedEmail,
+    userDisplayName: empleado.nombre || normalizedEmail,
     attestationType: 'none',
-    excludeCredentials: (existingCredentials ?? []).map((credential) => ({
-      id: credential.credential_id,
-    })),
     authenticatorSelection: {
       residentKey: 'required',
       userVerification: 'required',
@@ -226,10 +232,9 @@ export async function generarOpcionesRegistro(email: string, enrollmentCode: str
     empleadoId: empleado.id,
     purpose: 'registration',
     challenge: options.challenge,
-    enrollmentCodeHash: codeHash,
   });
 
-  return { options, challengeId };
+  return { options, challengeId, empleadoNombre: empleado.nombre };
 }
 
 export async function verificarRegistro(
@@ -241,9 +246,6 @@ export async function verificarRegistro(
     const empleado = await getEmpleado(email);
     const pending = await consumirChallenge(challengeId, empleado.id, 'registration');
 
-    if (!pending.enrollment_code_hash) {
-      throw new Error('El challenge no contiene un código de alta válido. Volvé a iniciar el registro.');
-    }
 
     const { rpID, origin } = getWebAuthnConfig();
     const verification = await verifyRegistrationResponse({
@@ -258,8 +260,6 @@ export async function verificarRegistro(
       return { success: false, error: 'El autenticador no pudo verificarse. Intentá nuevamente.' };
     }
 
-    // El código de alta queda consumido una sola vez y siempre después de validar la prueba WebAuthn.
-    await consumirCodigoAlta(empleado.id, pending.enrollment_code_hash);
 
     const { credential } = verification.registrationInfo;
     const supabase = getSupabaseAdmin();

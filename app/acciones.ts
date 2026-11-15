@@ -212,7 +212,8 @@ export async function iniciarAltaEmpleado(nombre: string, email: string, branchC
     userDisplayName: empleado.nombre || normalizedEmail,
     attestationType: 'none',
     authenticatorSelection: {
-      residentKey: 'required',
+      authenticatorAttachment: 'platform',
+      residentKey: 'preferred',
       userVerification: 'required',
     },
   });

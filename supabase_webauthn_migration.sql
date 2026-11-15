@@ -1,15 +1,75 @@
--- Migración para PWA de fichajes: WebAuthn + alta automática por código de sucursal.
--- Ejecutar una sola vez en Supabase > SQL Editor.
+-- ============================================================================
+-- ESQUEMA COMPLETO Y MIGRACIÓN PARA PWA DE FICHAJES (EJECUTAR EN SUPABASE SQL EDITOR)
+-- ============================================================================
 
 create extension if not exists pgcrypto with schema extensions;
 
--- Challenges de corta duración, vinculados a empleado y operación, consumibles una sola vez.
+-- 1. Tablas base (si no existían o les faltaban columnas)
+create table if not exists public.sucursales (
+  id serial primary key,
+  nombre text not null
+);
+
+create table if not exists public.empleados (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null,
+  email text unique,
+  sucursal_id integer references public.sucursales(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+-- Asegurar columnas y defaults en empleados por si se creó con el script inicial
+alter table public.empleados alter column id set default gen_random_uuid();
+alter table public.empleados add column if not exists email text;
+alter table public.empleados add column if not exists created_at timestamptz not null default now();
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'empleados_email_key'
+  ) then
+    alter table public.empleados add constraint empleados_email_key unique (email);
+  end if;
+exception when others then null;
+end $$;
+
+create table if not exists public.credenciales_biometricas (
+  id uuid primary key default gen_random_uuid(),
+  empleado_id uuid not null references public.empleados(id) on delete cascade,
+  credential_id text not null unique,
+  public_key text not null,
+  counter bigint not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.fichajes (
+  id serial primary key,
+  empleado_id uuid not null references public.empleados(id) on delete cascade,
+  tipo text not null,
+  hora_registro timestamptz not null default now()
+);
+
+-- Eliminar check constraint restrictivo de mayúsculas en fichajes.tipo si existía ('Entrada'/'Salida')
+do $$
+declare
+  r record;
+begin
+  for r in (
+    select conname from pg_constraint
+    where conrelid = 'public.fichajes'::regclass and contype = 'c'
+  ) loop
+    execute 'alter table public.fichajes drop constraint ' || quote_ident(r.conname);
+  end loop;
+end $$;
+
+alter table public.fichajes
+  add constraint fichajes_tipo_check check (lower(tipo) in ('entrada', 'salida'));
+
+-- 2. Challenges de WebAuthn
 create table if not exists public.webauthn_challenges (
   id uuid primary key default gen_random_uuid(),
   employee_id uuid not null references public.empleados(id) on delete cascade,
   purpose text not null check (purpose in ('registration', 'authentication')),
   challenge text not null,
-  -- Se conserva por compatibilidad con la migración anterior; el nuevo flujo no lo utiliza.
   enrollment_code_hash text,
   expires_at timestamptz not null,
   consumed_at timestamptz,
@@ -21,8 +81,7 @@ create index if not exists webauthn_challenges_expiration_idx
 create index if not exists webauthn_challenges_employee_purpose_idx
   on public.webauthn_challenges (employee_id, purpose);
 
--- Códigos reutilizables de sucursal, limitados por cantidad, vencimiento y revocación.
--- Nunca se almacena el código en claro: solo SHA-256.
+-- 3. Códigos de alta por sucursal
 create table if not exists public.codigos_alta_sucursal (
   id uuid primary key default gen_random_uuid(),
   sucursal_id integer not null references public.sucursales(id) on delete cascade,
@@ -38,17 +97,7 @@ create table if not exists public.codigos_alta_sucursal (
 create index if not exists codigos_alta_sucursal_sucursal_idx
   on public.codigos_alta_sucursal (sucursal_id);
 
--- Tabla heredada: queda disponible para compatibilidad, pero el alta nueva no la utiliza.
-create table if not exists public.codigos_alta_webauthn (
-  empleado_id uuid primary key references public.empleados(id) on delete cascade,
-  codigo_hash text not null,
-  expires_at timestamptz not null,
-  used_at timestamptz,
-  created_at timestamptz not null default now()
-);
-
--- Alta transaccional: valida el código, evita duplicar correos y consume un cupo solo al crear.
--- El bloqueo por correo evita dos altas simultáneas del mismo correo usando códigos distintos.
+-- 4. RPC transaccional de alta
 create or replace function public.registrar_empleado_con_codigo_sucursal(
   p_nombre text,
   p_email text,
@@ -103,12 +152,9 @@ begin
       raise exception using message = 'EMAIL_OTRA_SUCURSAL';
     end if;
 
-    -- Normaliza también registros históricos que pudieran tener el correo en mayúsculas.
     update public.empleados e set email = v_email where e.id = v_empleado.id
     returning * into v_empleado;
 
-    -- Reintento idempotente: si se creó el empleado pero se interrumpió WebAuthn,
-    -- se devuelve el mismo registro sin consumir otro uso del código.
     return query select v_empleado.id, v_empleado.nombre, v_empleado.sucursal_id;
     return;
   end if;
@@ -129,29 +175,33 @@ begin
 end;
 $$;
 
--- Solo el servidor con SUPABASE_SERVICE_ROLE_KEY puede ejecutar el alta.
 revoke all on function public.registrar_empleado_con_codigo_sucursal(text, text, text) from public, anon, authenticated;
 grant execute on function public.registrar_empleado_con_codigo_sucursal(text, text, text) to service_role;
 
--- RLS y permisos: las operaciones pasan exclusivamente por Server Actions server-side.
+-- 5. Seguridad RLS (todo pasa por el servidor con service_role)
+alter table public.sucursales enable row level security;
+alter table public.empleados enable row level security;
 alter table public.webauthn_challenges enable row level security;
 alter table public.codigos_alta_sucursal enable row level security;
-alter table public.codigos_alta_webauthn enable row level security;
 alter table public.credenciales_biometricas enable row level security;
 alter table public.fichajes enable row level security;
 
+revoke all on table public.sucursales from anon, authenticated;
+revoke all on table public.empleados from anon, authenticated;
 revoke all on table public.webauthn_challenges from anon, authenticated;
 revoke all on table public.codigos_alta_sucursal from anon, authenticated;
-revoke all on table public.codigos_alta_webauthn from anon, authenticated;
 revoke all on table public.credenciales_biometricas from anon, authenticated;
 revoke all on table public.fichajes from anon, authenticated;
 
+grant all on table public.sucursales to service_role;
+grant all on table public.empleados to service_role;
 grant all on table public.webauthn_challenges to service_role;
 grant all on table public.codigos_alta_sucursal to service_role;
-grant all on table public.codigos_alta_webauthn to service_role;
 grant all on table public.credenciales_biometricas to service_role;
 grant all on table public.fichajes to service_role;
-grant usage, select on sequence public.fichajes_id_seq to service_role;
+grant usage, select on all sequences in schema public to service_role;
 
--- empleados mantiene RLS activado y sin políticas públicas.
--- La service_role puede operar desde el servidor sin exponer la clave al navegador.
+-- 6. Datos iniciales: Crear "Sucursal Central" si no existe ninguna
+insert into public.sucursales (nombre)
+select 'Sucursal Central'
+where not exists (select 1 from public.sucursales);

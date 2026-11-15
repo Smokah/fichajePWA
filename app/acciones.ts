@@ -12,7 +12,6 @@ const RP_NAME = 'Fichajes PWA';
 const CHALLENGE_TTL_MINUTES = 5;
 
 type ChallengePurpose = 'registration' | 'authentication';
-
 type ActionResult = { success: true } | { success: false; error: string };
 
 function getWebAuthnConfig() {
@@ -91,7 +90,7 @@ async function getEmpleado(email: string) {
     console.error('Error consultando empleado:', error);
     throw new Error('No se pudo consultar el empleado. Revisá la configuración de Supabase.');
   }
-  if (!data) throw new Error('El correo no está registrado en la tabla empleados.');
+  if (!data) throw new Error('El correo no está registrado. Registrate primero en /registro.');
   return data;
 }
 
@@ -105,12 +104,10 @@ async function guardarChallenge(args: {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + CHALLENGE_TTL_MINUTES * 60_000).toISOString();
 
-  // Limpieza oportunista de challenges vencidos para que la tabla no crezca indefinidamente.
-  const { error: cleanupError } = await supabase
+  await supabase
     .from('webauthn_challenges')
     .delete()
     .lt('expires_at', now.toISOString());
-  if (cleanupError) console.error('No se pudieron limpiar challenges vencidos:', cleanupError);
 
   const { error } = await supabase.from('webauthn_challenges').insert({
     id: challengeId,
@@ -122,13 +119,12 @@ async function guardarChallenge(args: {
 
   if (error) {
     console.error('Error guardando challenge WebAuthn:', error);
-    throw new Error('No se pudo iniciar la operación WebAuthn. Aplicá la migración SQL incluida en el ZIP.');
+    throw new Error('No se pudo iniciar la operación WebAuthn. Aplicá el script SQL en Supabase.');
   }
 
   return challengeId;
 }
 
-/** Consume el challenge de forma atómica: no puede reutilizarse ni usarse para otro empleado/operación. */
 async function consumirChallenge(
   challengeId: string,
   empleadoId: string,
@@ -153,17 +149,12 @@ async function consumirChallenge(
 
   if (error) {
     console.error('Error consumiendo challenge WebAuthn:', error);
-    throw new Error('No se pudo validar la operación. Revisá la migración SQL de WebAuthn.');
+    throw new Error('No se pudo validar la operación. Revisá el script SQL de WebAuthn.');
   }
   if (!data) throw new Error('El challenge venció o ya fue utilizado. Volvé a intentarlo.');
   return data;
 }
 
-/**
- * Alta pública controlada: el código identifica la sucursal; el RPC crea el empleado
- * atómicamente y consume un cupo. Si el empleado ya fue creado en esa sucursal y
- * el alta biométrica quedó interrumpida, el RPC permite reintentar sin consumir otro cupo.
- */
 export async function iniciarAltaEmpleado(nombre: string, email: string, branchCode: string) {
   const normalizedName = normalizeName(nombre);
   const normalizedEmail = normalizeEmail(email);
@@ -178,7 +169,6 @@ export async function iniciarAltaEmpleado(nombre: string, email: string, branchC
   });
 
   if (error) {
-    console.error('Error validando código de sucursal / creando empleado:', error);
     const message = String(error.message ?? '');
     if (message.includes('CODIGO_SUCURSAL_INVALIDO')) {
       throw new Error('El código de sucursal es incorrecto, está vencido o fue revocado.');
@@ -192,8 +182,8 @@ export async function iniciarAltaEmpleado(nombre: string, email: string, branchC
     if (message.includes('EMAIL_DUPLICADO')) {
       throw new Error('Hay más de un empleado con ese correo. Contactá al administrador.');
     }
-    console.error('Detalle RPC alta:', error.details, error.hint, error.code);
-    throw new Error('No se pudo completar el alta. Verificá que hayas aplicado la migración SQL nueva.');
+    console.error('Detalle RPC alta:', error);
+    throw new Error('No se pudo completar el alta. Verificá que hayas ejecutado el SQL en Supabase.');
   }
 
   const empleado = Array.isArray(data) ? data[0] : data;
@@ -207,11 +197,10 @@ export async function iniciarAltaEmpleado(nombre: string, email: string, branchC
     .eq('empleado_id', empleado.id);
 
   if (credentialsError) {
-    console.error('Error consultando credenciales existentes:', credentialsError);
     throw new Error('No se pudieron consultar las Passkeys existentes.');
   }
   if (existingCredentials && existingCredentials.length > 0) {
-    throw new Error('Este empleado ya tiene una Passkey registrada. Para cambiar de dispositivo, solicitá asistencia al administrador.');
+    throw new Error('Este empleado ya tiene un celular vinculado. Solicitá al administrador resetearlo.');
   }
 
   const { rpID } = getWebAuthnConfig();
@@ -246,7 +235,6 @@ export async function verificarRegistro(
     const empleado = await getEmpleado(email);
     const pending = await consumirChallenge(challengeId, empleado.id, 'registration');
 
-
     const { rpID, origin } = getWebAuthnConfig();
     const verification = await verifyRegistrationResponse({
       response: response as Parameters<typeof verifyRegistrationResponse>[0]['response'],
@@ -260,7 +248,6 @@ export async function verificarRegistro(
       return { success: false, error: 'El autenticador no pudo verificarse. Intentá nuevamente.' };
     }
 
-
     const { credential } = verification.registrationInfo;
     const supabase = getSupabaseAdmin();
     const { error: insertError } = await supabase.from('credenciales_biometricas').insert({
@@ -273,7 +260,7 @@ export async function verificarRegistro(
 
     if (insertError) {
       console.error('Error guardando credencial biométrica:', insertError);
-      return { success: false, error: 'La verificación fue correcta, pero no se pudo guardar la Passkey. Solicitá un nuevo código al administrador.' };
+      return { success: false, error: 'La verificación fue correcta, pero no se pudo guardar la Passkey.' };
     }
 
     return { success: true };
@@ -292,11 +279,10 @@ export async function generarOpcionesAutenticacion(email: string) {
     .eq('empleado_id', empleado.id);
 
   if (error) {
-    console.error('Error consultando credenciales para fichar:', error);
     throw new Error('No se pudieron consultar tus Passkeys.');
   }
   if (!credentials || credentials.length === 0) {
-    throw new Error('Este empleado todavía no tiene un celular vinculado. Primero debe registrarlo.');
+    throw new Error('Este empleado todavía no tiene un celular vinculado. Primero debe registrarlo en /registro.');
   }
 
   const { rpID } = getWebAuthnConfig();
@@ -331,7 +317,6 @@ export async function verificarAutenticacion(
     }
 
     const supabase = getSupabaseAdmin();
-    // La búsqueda está limitada al empleado: una Passkey ajena nunca puede fichar por otra persona.
     const { data: credentialRow, error: credentialError } = await supabase
       .from('credenciales_biometricas')
       .select('credential_id, public_key, counter')
@@ -339,23 +324,13 @@ export async function verificarAutenticacion(
       .eq('empleado_id', empleado.id)
       .maybeSingle();
 
-    if (credentialError) {
-      console.error('Error consultando la credencial:', credentialError);
-      throw new Error('No se pudo consultar la credencial biométrica.');
+    if (credentialError || !credentialRow) {
+      throw new Error('Esta Passkey no está vinculada a este empleado.');
     }
-    if (!credentialRow) throw new Error('Esta Passkey no está vinculada a este empleado.');
 
     const pending = await consumirChallenge(challengeId, empleado.id, 'authentication');
     const { rpID, origin } = getWebAuthnConfig();
-    let publicKeyBytes: number[];
-    try {
-      publicKeyBytes = JSON.parse(credentialRow.public_key);
-    } catch {
-      throw new Error('La clave pública guardada está dañada. Hay que volver a vincular este dispositivo.');
-    }
-    if (!Array.isArray(publicKeyBytes) || publicKeyBytes.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) {
-      throw new Error('La clave pública guardada tiene un formato inválido.');
-    }
+    const publicKeyBytes: number[] = JSON.parse(credentialRow.public_key);
 
     const verification = await verifyAuthenticationResponse({
       response: response as Parameters<typeof verifyAuthenticationResponse>[0]['response'],
@@ -379,16 +354,11 @@ export async function verificarAutenticacion(
       throw new Error('Tipo de fichaje inválido.');
     }
 
-    const { error: counterError } = await supabase
+    await supabase
       .from('credenciales_biometricas')
       .update({ counter: verification.authenticationInfo.newCounter })
       .eq('credential_id', credentialRow.credential_id)
       .eq('empleado_id', empleado.id);
-
-    if (counterError) {
-      console.error('Error actualizando contador WebAuthn:', counterError);
-      throw new Error('La autenticación fue correcta, pero no se pudo actualizar la credencial.');
-    }
 
     const { error: fichajeError } = await supabase.from('fichajes').insert({
       empleado_id: empleado.id,
@@ -397,7 +367,6 @@ export async function verificarAutenticacion(
     });
 
     if (fichajeError) {
-      console.error('Error guardando fichaje:', fichajeError);
       throw new Error('La identidad fue verificada, pero no se pudo guardar el fichaje.');
     }
 
@@ -406,4 +375,97 @@ export async function verificarAutenticacion(
     console.error('Fallo en verificarAutenticacion:', error);
     return { success: false, error: error instanceof Error ? error.message : 'No se pudo completar el fichaje.' };
   }
+}
+
+// ============================================================================
+// ACCIONES DEL PANEL DEL DUEÑO (/panel)
+// ============================================================================
+
+function validarAdminPin(pin: string) {
+  const expectedPin = (process.env.ADMIN_PIN || '1234').trim();
+  if (String(pin ?? '').trim() !== expectedPin) {
+    throw new Error('PIN de administrador incorrecto.');
+  }
+}
+
+export async function obtenerDatosPanel(pin: string) {
+  validarAdminPin(pin);
+  const supabase = getSupabaseAdmin();
+
+  const [sucursalesRes, empleadosRes, fichajesRes, codigosRes] = await Promise.all([
+    supabase.from('sucursales').select('id, nombre').order('id', { ascending: true }),
+    supabase
+      .from('empleados')
+      .select('id, nombre, email, sucursal_id, sucursales(nombre), credenciales_biometricas(id)')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('fichajes')
+      .select('id, tipo, hora_registro, empleados(nombre, email, sucursales(nombre))')
+      .order('hora_registro', { ascending: false })
+      .limit(100),
+    supabase
+      .from('codigos_alta_sucursal')
+      .select('id, sucursal_id, expires_at, max_usos, usos, activo, created_at, sucursales(nombre)')
+      .order('created_at', { ascending: false })
+      .limit(20),
+  ]);
+
+  if (sucursalesRes.error) throw new Error('Error cargando sucursales: ' + sucursalesRes.error.message);
+  if (empleadosRes.error) throw new Error('Error cargando empleados: ' + empleadosRes.error.message);
+  if (fichajesRes.error) throw new Error('Error cargando fichajes: ' + fichajesRes.error.message);
+
+  return {
+    sucursales: sucursalesRes.data ?? [],
+    empleados: empleadosRes.data ?? [],
+    fichajes: fichajesRes.data ?? [],
+    codigos: codigosRes.data ?? [],
+  };
+}
+
+export async function crearSucursalAdmin(pin: string, nombre: string) {
+  validarAdminPin(pin);
+  const cleanName = String(nombre ?? '').trim();
+  if (cleanName.length < 2) throw new Error('Ingresá un nombre válido para la sucursal.');
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from('sucursales').insert({ nombre: cleanName });
+  if (error) throw new Error('No se pudo crear la sucursal: ' + error.message);
+  return { success: true };
+}
+
+export async function generarCodigoSucursalAdmin(pin: string, sucursalId: number, maxUsos = 30, diasValidez = 30) {
+  validarAdminPin(pin);
+  if (!sucursalId) throw new Error('Seleccioná una sucursal.');
+
+  const randomBytes = new Uint8Array(8);
+  crypto.getRandomValues(randomBytes);
+  const codigoPlano = Array.from(randomBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  const codigoHash = await sha256Hex(codigoPlano);
+
+  const expiresAt = new Date(Date.now() + diasValidez * 24 * 60 * 60 * 1000).toISOString();
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from('codigos_alta_sucursal').insert({
+    sucursal_id: Number(sucursalId),
+    codigo_hash: codigoHash,
+    expires_at: expiresAt,
+    max_usos: Number(maxUsos) || 30,
+    usos: 0,
+    activo: true,
+  });
+
+  if (error) throw new Error('No se pudo generar el código: ' + error.message);
+  return { codigoPlano };
+}
+
+export async function resetearPasskeyEmpleado(pin: string, empleadoId: string) {
+  validarAdminPin(pin);
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from('credenciales_biometricas')
+    .delete()
+    .eq('empleado_id', empleadoId);
+
+  if (error) throw new Error('No se pudo resetear la Passkey: ' + error.message);
+  return { success: true };
 }

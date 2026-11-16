@@ -3,6 +3,8 @@ export interface FichajeRaw {
   tipo: string;
   hora_registro: string;
   empleado_id: string;
+  sucursal_id?: number | null;
+  sucursales?: { nombre: string } | null;
   empleados?: {
     nombre: string;
     email: string;
@@ -31,7 +33,6 @@ export function formatearDuracion(minutos: number): string {
 }
 
 export function calcularEstadisticasEmpleados(fichajes: FichajeRaw[]): ResumenEmpleado[] {
-  // Ordenar cronológicamente ascendente para emparejar Entrada -> Salida
   const ordenados = [...fichajes].sort(
     (a, b) => new Date(a.hora_registro).getTime() - new Date(b.hora_registro).getTime()
   );
@@ -55,7 +56,7 @@ export function calcularEstadisticasEmpleados(fichajes: FichajeRaw[]): ResumenEm
       porEmpleado.set(empId, {
         nombre: f.empleados?.nombre || 'Desconocido',
         email: f.empleados?.email || '',
-        sucursal: f.empleados?.sucursales?.nombre || 'Sin sucursal',
+        sucursal: f.sucursales?.nombre || f.empleados?.sucursales?.nombre || 'Sin sucursal',
         entradaPendiente: null,
         totalMinutos: 0,
         entradas: 0,
@@ -76,7 +77,6 @@ export function calcularEstadisticasEmpleados(fichajes: FichajeRaw[]): ResumenEm
       acc.salidas += 1;
       if (acc.entradaPendiente) {
         const diffMin = Math.max(0, (fecha.getTime() - acc.entradaPendiente.getTime()) / 60000);
-        // Tope de seguridad de 18h por turno continuo para evitar olvidos de salida
         if (diffMin <= 18 * 60) {
           acc.totalMinutos += diffMin;
         }

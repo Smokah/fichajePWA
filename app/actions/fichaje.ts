@@ -201,38 +201,30 @@ export async function verificarRegistro(
 }
 
 /**
- * 2. VALIDACIÓN DE QR DE SUCURSAL + PREPARACIÓN BIOMÉTRICA (SIN PEDIR EMAIL)
+ * 2. VALIDACIÓN ATÓMICA DE QR DINÁMICO DE UN SOLO USO + PREPARACIÓN BIOMÉTRICA
+ * - Cualquier empleado habilitado puede escanear el QR de CUALQUIER sucursal.
+ * - El token QR se quema atómicamente en el instante del escaneo: nadie puede reenviarlo ni reutilizarlo.
  */
-export async function iniciarFichajeConQR(empleadoId: string, qrTokenRaw: string) {
-  const token = String(qrTokenRaw ?? '').trim();
-  if (!token) throw new Error('Código QR vacío o ilegible.');
+export async function iniciarFichajeConQR(empleadoId: string, qrRaw: string) {
+  const raw = String(qrRaw ?? '').trim();
+  if (!raw) throw new Error('Código QR vacío o ilegible.');
 
-  // Permitir que el QR contenga solo el token hex o una URL completa (?qr=TOKEN)
-  let extractedToken = token;
+  let extractedToken = raw;
   try {
-    if (token.startsWith('http://') || token.startsWith('https://')) {
-      const url = new URL(token);
-      extractedToken = url.searchParams.get('qr') || token;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      const url = new URL(raw);
+      extractedToken = url.searchParams.get('qr') || raw;
     }
   } catch {
     // mantener token original
   }
 
-  const supabase = getSupabaseAdmin();
-
-  // Verificar que el QR pertenezca a una sucursal válida
-  const { data: sucursal, error: sucError } = await supabase
-    .from('sucursales')
-    .select('id, nombre')
-    .eq('qr_token', extractedToken)
-    .maybeSingle();
-
-  if (sucError || !sucursal) {
-    throw new Error('Código QR no válido o no pertenece a ninguna sucursal habilitada.');
+  if (!/^[a-f0-9]{48}$/i.test(extractedToken)) {
+    throw new Error('Código QR inválido. Escaneá el código dinámico en la pantalla de la sucursal.');
   }
 
-  // Verificar empleado vinculado en este dispositivo
   const empleado = await getEmpleadoById(empleadoId);
+  const supabase = getSupabaseAdmin();
 
   const { data: credentials, error: credError } = await supabase
     .from('credenciales_biometricas')
@@ -242,6 +234,29 @@ export async function iniciarFichajeConQR(empleadoId: string, qrTokenRaw: string
   if (credError || !credentials || credentials.length === 0) {
     throw new Error('Tu dispositivo ya no está vinculado. Realizá el alta nuevamente.');
   }
+
+  // CONSUMO ATÓMICO DE UN SOLO USO:
+  // Solo pasa si el token existe, no fue consumido (consumed_at IS NULL) y no venció (expires_at > now)
+  const nowIso = new Date().toISOString();
+  const { data: qrConsumido, error: qrError } = await supabase
+    .from('qr_tokens_dinamicos')
+    .update({
+      consumed_at: nowIso,
+      consumed_by: empleado.id,
+    })
+    .eq('token', extractedToken.toLowerCase())
+    .is('consumed_at', null)
+    .gt('expires_at', nowIso)
+    .select('id, sucursal_id, sucursales(id, nombre)')
+    .maybeSingle();
+
+  if (qrError || !qrConsumido) {
+    throw new Error('Código QR vencido o ya utilizado. Escaneá el nuevo código en pantalla.');
+  }
+
+  const sucursalObj = qrConsumido.sucursales as any;
+  const sucursalId = qrConsumido.sucursal_id;
+  const sucursalNombre = sucursalObj?.nombre || 'Sucursal';
 
   // Detectar automáticamente si corresponde Entrada o Salida según la última marca de hoy
   const inicioDia = new Date();
@@ -275,8 +290,8 @@ export async function iniciarFichajeConQR(empleadoId: string, qrTokenRaw: string
   return {
     options,
     challengeId,
-    sucursalId: sucursal.id,
-    sucursalNombre: sucursal.nombre,
+    sucursalId,
+    sucursalNombre,
     empleadoNombre: empleado.nombre,
     tipoSugerido,
   };

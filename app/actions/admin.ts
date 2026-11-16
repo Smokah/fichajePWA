@@ -68,7 +68,7 @@ export async function obtenerDatosAdministrativos(
 
   let queryFichajes = supabase
     .from('fichajes')
-    .select('id, tipo, hora_registro, empleado_id, empleados(nombre, email, sucursal_id, sucursales(nombre))')
+    .select('id, tipo, hora_registro, empleado_id, sucursal_id, sucursales(nombre), empleados(nombre, email, sucursal_id, sucursales(nombre))')
     .order('hora_registro', { ascending: false })
     .limit(1000);
 
@@ -80,7 +80,7 @@ export async function obtenerDatosAdministrativos(
   }
 
   const [sucursalesRes, empleadosRes, fichajesRes, adminsRes] = await Promise.all([
-    supabase.from('sucursales').select('id, nombre, qr_token').order('id', { ascending: true }),
+    supabase.from('sucursales').select('id, nombre, kiosk_key').order('id', { ascending: true }),
     supabase
       .from('empleados')
       .select('id, nombre, email, sucursal_id, sucursales(nombre), credenciales_biometricas(id)')
@@ -104,7 +104,7 @@ export async function obtenerDatosAdministrativos(
   let empleados = empleadosRes.data ?? [];
 
   if (sucursalForzada && sucursalForzada !== 'TODAS') {
-    fichajes = fichajes.filter((f: any) => String(f.empleados?.sucursal_id) === sucursalForzada);
+    fichajes = fichajes.filter((f: any) => String(f.sucursal_id ?? f.empleados?.sucursal_id) === sucursalForzada);
     empleados = empleados.filter((e: any) => String(e.sucursal_id) === sucursalForzada);
   }
 
@@ -296,7 +296,7 @@ export async function registrarFichajeManualAdmin(
   return { success: true };
 }
 
-export async function regenerarQrSucursalAdmin(
+export async function regenerarKioskKeySucursalAdmin(
   credenciales: { identificador: string; pin: string },
   sucursalId: number
 ) {
@@ -308,9 +308,9 @@ export async function regenerarQrSucursalAdmin(
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
     .from('sucursales')
-    .update({ qr_token: nuevoToken })
+    .update({ kiosk_key: nuevoToken.slice(0, 16) })
     .eq('id', sucursalId);
 
   if (error) throw new Error('No se pudo regenerar el QR: ' + error.message);
-  return { qrToken: nuevoToken };
+  return { kioskKey: nuevoToken.slice(0, 16) };
 }

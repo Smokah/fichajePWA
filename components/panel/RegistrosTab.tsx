@@ -107,7 +107,7 @@ export function RegistrosTab({ credenciales, fichajes, empleados, onRefresh }: R
                   return (
                     <tr key={f.id} className="hover:bg-slate-50/80">
                       <td className="py-3 px-3 font-medium text-slate-900">{f.empleados?.nombre || 'Desconocido'}</td>
-                      <td className="py-3 px-3 text-slate-600">{f.empleados?.sucursales?.nombre || 'Sin sede'}</td>
+                      <td className="py-3 px-3 text-slate-600">{f.sucursales?.nombre || f.empleados?.sucursales?.nombre || 'Sin sede'}</td>
                       <td className="py-3 px-3">
                         <span
                           className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium capitalize ${

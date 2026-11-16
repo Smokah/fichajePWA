@@ -1,33 +1,47 @@
 -- ============================================================================
--- ESQUEMA CON FICHAJE POR QR DE SUCURSAL + BIOMETRÍA ÚNICA
+-- ESQUEMA CON QR DINÁMICO DE UN SOLO USO POR SUCURSAL + BIOMETRÍA ÚNICA
 -- Ejecutar en Supabase > SQL Editor
 -- ============================================================================
 
 create extension if not exists pgcrypto with schema extensions;
 
--- 1. Sucursales con token QR único por sede
+-- 1. Sucursales (con clave de kiosco para pantalla mostrador)
 create table if not exists public.sucursales (
   id serial primary key,
   nombre text not null,
-  qr_token text unique default encode(extensions.gen_random_bytes(12), 'hex')
+  kiosk_key text unique default encode(extensions.gen_random_bytes(8), 'hex')
 );
 
-alter table public.sucursales add column if not exists qr_token text;
+alter table public.sucursales add column if not exists kiosk_key text;
 update public.sucursales
-set qr_token = encode(extensions.gen_random_bytes(12), 'hex')
-where qr_token is null;
+set kiosk_key = encode(extensions.gen_random_bytes(8), 'hex')
+where kiosk_key is null;
 
 do $$
 begin
   if not exists (
-    select 1 from pg_constraint where conname = 'sucursales_qr_token_key'
+    select 1 from pg_constraint where conname = 'sucursales_kiosk_key_key'
   ) then
-    alter table public.sucursales add constraint sucursales_qr_token_key unique (qr_token);
+    alter table public.sucursales add constraint sucursales_kiosk_key_key unique (kiosk_key);
   end if;
 exception when others then null;
 end $$;
 
--- 2. Empleados
+-- 2. Tokens QR Dinámicos de un solo uso y corta duración (60 segundos)
+create table if not exists public.qr_tokens_dinamicos (
+  id uuid primary key default gen_random_uuid(),
+  sucursal_id integer not null references public.sucursales(id) on delete cascade,
+  token text not null unique,
+  expires_at timestamptz not null,
+  consumed_at timestamptz,
+  consumed_by uuid references public.empleados(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists qr_tokens_dinamicos_token_idx on public.qr_tokens_dinamicos (token);
+create index if not exists qr_tokens_dinamicos_expires_idx on public.qr_tokens_dinamicos (expires_at);
+
+-- 3. Empleados
 create table if not exists public.empleados (
   id uuid primary key default gen_random_uuid(),
   nombre text not null,
@@ -40,7 +54,7 @@ alter table public.empleados alter column id set default gen_random_uuid();
 alter table public.empleados add column if not exists email text;
 alter table public.empleados add column if not exists created_at timestamptz not null default now();
 
--- 3. Credenciales Biométricas (WebAuthn)
+-- 4. Credenciales Biométricas (WebAuthn)
 create table if not exists public.credenciales_biometricas (
   id uuid primary key default gen_random_uuid(),
   empleado_id uuid not null references public.empleados(id) on delete cascade,
@@ -50,7 +64,7 @@ create table if not exists public.credenciales_biometricas (
   created_at timestamptz not null default now()
 );
 
--- 4. Fichajes (ahora registra también en qué sucursal escaneó el QR!)
+-- 5. Fichajes (registra sucursal_id exacta donde se escaneó el QR dinámico)
 create table if not exists public.fichajes (
   id serial primary key,
   empleado_id uuid not null references public.empleados(id) on delete cascade,
@@ -76,7 +90,7 @@ end $$;
 alter table public.fichajes
   add constraint fichajes_tipo_check check (lower(tipo) in ('entrada', 'salida'));
 
--- 5. Challenges WebAuthn
+-- 6. Challenges WebAuthn
 create table if not exists public.webauthn_challenges (
   id uuid primary key default gen_random_uuid(),
   employee_id uuid not null references public.empleados(id) on delete cascade,
@@ -88,7 +102,7 @@ create table if not exists public.webauthn_challenges (
   created_at timestamptz not null default now()
 );
 
--- 6. Códigos de Alta por Sucursal
+-- 7. Códigos de Alta por Sucursal
 create table if not exists public.codigos_alta_sucursal (
   id uuid primary key default gen_random_uuid(),
   sucursal_id integer not null references public.sucursales(id) on delete cascade,
@@ -101,7 +115,7 @@ create table if not exists public.codigos_alta_sucursal (
   constraint codigos_alta_sucursal_usos_limite check (usos <= max_usos)
 );
 
--- 7. Usuarios Administrativos
+-- 8. Usuarios Administrativos
 create table if not exists public.usuarios_admin (
   id uuid primary key default gen_random_uuid(),
   nombre text not null,
@@ -113,7 +127,7 @@ create table if not exists public.usuarios_admin (
   created_at timestamptz not null default now()
 );
 
--- 8. RPC transaccional de alta única
+-- 9. RPC transaccional de alta única
 create or replace function public.registrar_empleado_con_codigo_sucursal(
   p_nombre text,
   p_email text,
@@ -194,8 +208,9 @@ $$;
 revoke all on function public.registrar_empleado_con_codigo_sucursal(text, text, text) from public, anon, authenticated;
 grant execute on function public.registrar_empleado_con_codigo_sucursal(text, text, text) to service_role;
 
--- 9. RLS y Permisos
+-- 10. RLS y Permisos
 alter table public.sucursales enable row level security;
+alter table public.qr_tokens_dinamicos enable row level security;
 alter table public.empleados enable row level security;
 alter table public.webauthn_challenges enable row level security;
 alter table public.codigos_alta_sucursal enable row level security;
@@ -204,6 +219,7 @@ alter table public.fichajes enable row level security;
 alter table public.usuarios_admin enable row level security;
 
 revoke all on table public.sucursales from anon, authenticated;
+revoke all on table public.qr_tokens_dinamicos from anon, authenticated;
 revoke all on table public.empleados from anon, authenticated;
 revoke all on table public.webauthn_challenges from anon, authenticated;
 revoke all on table public.codigos_alta_sucursal from anon, authenticated;
@@ -212,6 +228,7 @@ revoke all on table public.fichajes from anon, authenticated;
 revoke all on table public.usuarios_admin from anon, authenticated;
 
 grant all on table public.sucursales to service_role;
+grant all on table public.qr_tokens_dinamicos to service_role;
 grant all on table public.empleados to service_role;
 grant all on table public.webauthn_challenges to service_role;
 grant all on table public.codigos_alta_sucursal to service_role;

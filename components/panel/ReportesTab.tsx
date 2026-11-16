@@ -57,7 +57,7 @@ export function ReportesTab({ fichajes, totalEmpleados, rangoFechas }: ReportesT
         f.id,
         `"${f.empleados?.nombre || ''}"`,
         `"${f.empleados?.email || ''}"`,
-        `"${f.empleados?.sucursales?.nombre || 'Sin sucursal'}"`,
+        `"${(f as any).sucursales?.nombre || f.empleados?.sucursales?.nombre || 'Sin sucursal'}"`,
         `"${String(f.tipo).toUpperCase()}"`,
         `"${dt.toLocaleDateString('es-AR')}"`,
         `"${dt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}"`,

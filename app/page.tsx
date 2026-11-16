@@ -116,6 +116,10 @@ function TerminalContenido() {
           <span className="text-sm font-semibold tracking-tight text-slate-900">AccesoMóvil</span>
         </div>
         <nav className="flex items-center gap-4 text-xs font-medium text-slate-600">
+          <Link href="/kiosco" className="hover:text-slate-900 transition-colors">
+            Modo Kiosco
+          </Link>
+          <span className="text-slate-300">|</span>
           <Link href="/panel" className="hover:text-slate-900 transition-colors">
             Administración
           </Link>

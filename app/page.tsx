@@ -1,10 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition, Suspense } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { startAuthentication } from '@simplewebauthn/browser';
-import { iniciarFichajeConQR, confirmarFichajeConQR } from './actions/fichaje';
+import {
+  iniciarFichajeConQR,
+  confirmarFichajeConQR,
+  obtenerSugerenciaTurno,
+} from './actions/fichaje';
 import { QrScanner } from '@/components/QrScanner';
 import { STORAGE_PERFIL_KEY } from './registro/page';
 
@@ -15,31 +19,11 @@ interface PerfilVinculado {
   sucursal: string;
 }
 
-function TerminalContenido() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const [perfil, setPerfil] = useState<PerfilVinculado | null>(null);
-  const [cargandoPerfil, setCargandoPerfil] = useState(true);
-  const [escaneando, setEscaneando] = useState(false);
-  const [estado, setEstado] = useState('');
-  const [tipoEstado, setTipoEstado] = useState<'idle' | 'ok' | 'err'>('idle');
+function RelojEnVivo() {
   const [horaActual, setHoraActual] = useState('');
-  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(STORAGE_PERFIL_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed?.empleadoId) setPerfil(parsed);
-      }
-    } catch {
-      // ignorar
-    } finally {
-      setCargandoPerfil(false);
-    }
-
-    const actualizarReloj = () => {
+    const actualizar = () => {
       setHoraActual(
         new Date().toLocaleTimeString('es-AR', {
           hour: '2-digit',
@@ -48,22 +32,79 @@ function TerminalContenido() {
         })
       );
     };
-    actualizarReloj();
-    const timer = setInterval(actualizarReloj, 1000);
+    actualizar();
+    const timer = setInterval(actualizar, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  return (
+    <div className="text-right">
+      <p className="font-mono text-xl font-semibold tabular-nums text-slate-900">
+        {horaActual || '--:--:--'}
+      </p>
+      <p className="text-[11px] text-slate-400">Hora local</p>
+    </div>
+  );
+}
+
+function TerminalContenido() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [perfil, setPerfil] = useState<PerfilVinculado | null>(null);
+  const [cargandoPerfil, setCargandoPerfil] = useState(true);
+  const [escaneando, setEscaneando] = useState(false);
+
+  // Control explícito del empleado + sugerencia automática por detrás
+  const [tipoSeleccionado, setTipoSeleccionado] = useState<'entrada' | 'salida'>('entrada');
+  const [tipoSugerido, setTipoSugerido] = useState<'entrada' | 'salida'>('entrada');
+  const [ultimaMarca, setUltimaMarca] = useState<{ tipo: string; hora: string; sucursal: string } | null>(null);
+
+  const [estado, setEstado] = useState('');
+  const [tipoEstado, setTipoEstado] = useState<'idle' | 'ok' | 'err'>('idle');
+  const [isPending, startTransition] = useTransition();
+
+  const tipoSeleccionadoRef = useRef<'entrada' | 'salida'>('entrada');
+  useEffect(() => {
+    tipoSeleccionadoRef.current = tipoSeleccionado;
+  }, [tipoSeleccionado]);
+
+  const cargarSugerencia = useCallback(async (empId: string) => {
+    const res = await obtenerSugerenciaTurno(empId);
+    setTipoSugerido(res.sugerencia);
+    setTipoSeleccionado(res.sugerencia);
+    setUltimaMarca(res.ultimaMarca);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_PERFIL_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.empleadoId) {
+          setPerfil(parsed);
+          cargarSugerencia(parsed.empleadoId);
+        }
+      }
+    } catch {
+      // ignorar
+    } finally {
+      setCargandoPerfil(false);
+    }
+  }, [cargarSugerencia]);
 
   const procesarCodigoQR = useCallback(
     (qrLeido: string, perfilActual: PerfilVinculado) => {
       setEscaneando(false);
+      const tipoAEnviar = tipoSeleccionadoRef.current;
+
       startTransition(async () => {
         try {
           setTipoEstado('idle');
           setEstado('Validando QR de sucursal...');
           const prep = await iniciarFichajeConQR(perfilActual.empleadoId, qrLeido);
 
-          const etiquetaTipo = prep.tipoSugerido === 'entrada' ? 'ENTRADA' : 'SALIDA';
-          setEstado(`Sede: ${prep.sucursalNombre} · Confirmá ${etiquetaTipo} con tu huella...`);
+          const etiqueta = tipoAEnviar === 'entrada' ? 'ENTRADA' : 'SALIDA';
+          setEstado(`Sede: ${prep.sucursalNombre} · Confirmá ${etiqueta} con tu huella...`);
 
           const response = await startAuthentication({ optionsJSON: prep.options });
 
@@ -73,15 +114,16 @@ function TerminalContenido() {
             prep.sucursalId,
             response,
             prep.challengeId,
-            prep.tipoSugerido
+            tipoAEnviar
           );
 
           if (res.success) {
             setTipoEstado('ok');
             setEstado(
-              `${res.tipo === 'entrada' ? 'Ingreso' : 'Egreso'} registrado en ${res.sucursal} a las ${res.hora} hs.`
+              `${res.tipo === 'entrada' ? 'Entrada' : 'Salida'} registrada en ${res.sucursal} a las ${res.hora} hs.`
             );
-            // Limpiar parámetro ?qr= de la URL si vino desde la cámara nativa
+            // Actualizar sugerencia para el próximo movimiento
+            cargarSugerencia(perfilActual.empleadoId);
             if (searchParams.get('qr')) {
               router.replace('/');
             }
@@ -95,10 +137,10 @@ function TerminalContenido() {
         }
       });
     },
-    [router, searchParams]
+    [cargarSugerencia, router, searchParams]
   );
 
-  // Si el empleado escaneó el QR directamente con la cámara nativa del celular (abriendo /?qr=TOKEN)
+  // Si escaneó el QR directamente desde la cámara nativa del teléfono (/?qr=TOKEN)
   useEffect(() => {
     const qrParam = searchParams.get('qr');
     if (!cargandoPerfil && perfil && qrParam && !isPending && tipoEstado === 'idle' && !estado) {
@@ -135,18 +177,12 @@ function TerminalContenido() {
                 {perfil ? perfil.nombre : 'Terminal móvil sin vincular'}
               </p>
             </div>
-            <div className="text-right">
-              <p className="font-mono text-xl font-semibold tabular-nums text-slate-900">
-                {horaActual || '--:--:--'}
-              </p>
-              <p className="text-[11px] text-slate-400">Hora local</p>
-            </div>
+            <RelojEnVivo />
           </div>
 
           {cargandoPerfil ? (
             <p className="py-8 text-center text-xs text-slate-400">Verificando dispositivo...</p>
           ) : !perfil ? (
-            /* Pantalla de primera vez (Alta única) */
             <div className="space-y-4 py-2">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 space-y-1.5">
                 <p className="font-semibold text-slate-900">Dispositivo aún no habilitado</p>
@@ -162,8 +198,51 @@ function TerminalContenido() {
               </Link>
             </div>
           ) : (
-            /* Pantalla operativa diaria: 1 solo toque -> Cámara QR -> Huella -> Listo */
             <div className="space-y-5">
+              {/* Selector explícito Entrada / Salida con preselección inteligente */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-700">Tipo de movimiento</span>
+                  <span className="text-[11px] text-slate-400">
+                    Sugerido: <strong className="font-semibold text-slate-600 capitalize">{tipoSugerido}</strong>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 rounded-xl bg-slate-100 p-1">
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => setTipoSeleccionado('entrada')}
+                    className={`rounded-lg py-2.5 text-xs font-semibold transition-all ${
+                      tipoSeleccionado === 'entrada'
+                        ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Entrada
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => setTipoSeleccionado('salida')}
+                    className={`rounded-lg py-2.5 text-xs font-semibold transition-all ${
+                      tipoSeleccionado === 'salida'
+                        ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Salida
+                  </button>
+                </div>
+
+                {ultimaMarca && (
+                  <p className="text-[11px] text-slate-500">
+                    Última marca hoy: {ultimaMarca.tipo} a las {ultimaMarca.hora} hs ({ultimaMarca.sucursal})
+                  </p>
+                )}
+              </div>
+
+              {/* Escáner QR estable (sin parpadeos) */}
               {!escaneando ? (
                 <button
                   onClick={() => {
@@ -172,25 +251,31 @@ function TerminalContenido() {
                     setEscaneando(true);
                   }}
                   disabled={isPending}
-                  className="flex w-full items-center justify-between rounded-xl bg-slate-900 px-5 py-5 text-left text-white shadow-sm transition-all hover:bg-slate-800 active:scale-[0.99] disabled:opacity-50"
+                  className="flex w-full items-center justify-between rounded-xl bg-slate-900 px-5 py-4 text-left text-white shadow-sm transition-all hover:bg-slate-800 active:scale-[0.99] disabled:opacity-50"
                 >
                   <div>
-                    <span className="block text-base font-semibold tracking-tight">
-                      {isPending ? 'Procesando...' : 'Escanear QR de Sucursal'}
+                    <span className="block text-sm font-semibold tracking-tight">
+                      {isPending
+                        ? 'Validando...'
+                        : `Escanear QR para ${tipoSeleccionado === 'entrada' ? 'Entrada' : 'Salida'}`}
                     </span>
                     <span className="block text-xs text-slate-400 mt-0.5">
-                      Registra automáticamente tu entrada o salida
+                      Apuntá a la pantalla de la sucursal
                     </span>
                   </div>
-                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 font-mono text-xs font-bold">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 font-mono text-xs font-bold">
                     QR
                   </span>
                 </button>
               ) : (
                 <div className="space-y-3">
-                  <p className="text-center text-xs font-medium text-slate-600">
-                    Apuntá la cámara al código QR impreso en la sucursal
-                  </p>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-slate-700">
+                      Registrando: <strong className="uppercase">{tipoSeleccionado}</strong>
+                    </span>
+                    <span className="text-slate-400">Enfocá el código QR</span>
+                  </div>
+
                   <QrScanner
                     onScanSuccess={(code) => procesarCodigoQR(code, perfil)}
                     onScanError={(err) => {
@@ -199,6 +284,7 @@ function TerminalContenido() {
                       setEstado(err);
                     }}
                   />
+
                   <button
                     onClick={() => setEscaneando(false)}
                     className="w-full rounded-xl border border-slate-300 bg-white py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
@@ -212,7 +298,7 @@ function TerminalContenido() {
                 <div
                   role="status"
                   aria-live="polite"
-                  className={`rounded-xl border px-4 py-3.5 text-xs font-medium ${
+                  className={`rounded-xl border px-4 py-3 text-xs font-medium ${
                     tipoEstado === 'ok'
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
                       : tipoEstado === 'err'

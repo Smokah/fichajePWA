@@ -92,6 +92,45 @@ async function consumirChallenge(
 }
 
 /**
+ * Consulta la última marca de hoy para sugerir Entrada o Salida en la interfaz
+ */
+export async function obtenerSugerenciaTurno(empleadoId: string): Promise<{
+  sugerencia: 'entrada' | 'salida';
+  ultimaMarca: { tipo: string; hora: string; sucursal: string } | null;
+}> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const inicioDia = new Date();
+    inicioDia.setHours(0, 0, 0, 0);
+
+    const { data: ultimo } = await supabase
+      .from('fichajes')
+      .select('tipo, hora_registro, sucursales(nombre)')
+      .eq('empleado_id', empleadoId)
+      .gte('hora_registro', inicioDia.toISOString())
+      .order('hora_registro', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!ultimo) {
+      return { sugerencia: 'entrada', ultimaMarca: null };
+    }
+
+    const esEntrada = String(ultimo.tipo).toLowerCase() === 'entrada';
+    return {
+      sugerencia: esEntrada ? 'salida' : 'entrada',
+      ultimaMarca: {
+        tipo: esEntrada ? 'Entrada' : 'Salida',
+        hora: new Date(ultimo.hora_registro).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+        sucursal: (ultimo.sucursales as any)?.nombre || 'Sede',
+      },
+    };
+  } catch {
+    return { sugerencia: 'entrada', ultimaMarca: null };
+  }
+}
+
+/**
  * 1. ALTA ÚNICA DEL EMPLEADO
  */
 export async function iniciarAltaEmpleado(nombre: string, email: string, branchCode: string) {
@@ -202,8 +241,6 @@ export async function verificarRegistro(
 
 /**
  * 2. VALIDACIÓN ATÓMICA DE QR DINÁMICO DE UN SOLO USO + PREPARACIÓN BIOMÉTRICA
- * - Cualquier empleado habilitado puede escanear el QR de CUALQUIER sucursal.
- * - El token QR se quema atómicamente en el instante del escaneo: nadie puede reenviarlo ni reutilizarlo.
  */
 export async function iniciarFichajeConQR(empleadoId: string, qrRaw: string) {
   const raw = String(qrRaw ?? '').trim();
@@ -235,8 +272,7 @@ export async function iniciarFichajeConQR(empleadoId: string, qrRaw: string) {
     throw new Error('Tu dispositivo ya no está vinculado. Realizá el alta nuevamente.');
   }
 
-  // CONSUMO ATÓMICO DE UN SOLO USO:
-  // Solo pasa si el token existe, no fue consumido (consumed_at IS NULL) y no venció (expires_at > now)
+  // Consumo atómico de un solo uso
   const nowIso = new Date().toISOString();
   const { data: qrConsumido, error: qrError } = await supabase
     .from('qr_tokens_dinamicos')
@@ -258,22 +294,6 @@ export async function iniciarFichajeConQR(empleadoId: string, qrRaw: string) {
   const sucursalId = qrConsumido.sucursal_id;
   const sucursalNombre = sucursalObj?.nombre || 'Sucursal';
 
-  // Detectar automáticamente si corresponde Entrada o Salida según la última marca de hoy
-  const inicioDia = new Date();
-  inicioDia.setHours(0, 0, 0, 0);
-
-  const { data: ultimoFichaje } = await supabase
-    .from('fichajes')
-    .select('tipo')
-    .eq('empleado_id', empleado.id)
-    .gte('hora_registro', inicioDia.toISOString())
-    .order('hora_registro', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const tipoSugerido: 'entrada' | 'salida' =
-    ultimoFichaje && String(ultimoFichaje.tipo).toLowerCase() === 'entrada' ? 'salida' : 'entrada';
-
   const { rpID } = getWebAuthnConfig();
   const options = await generateAuthenticationOptions({
     rpID,
@@ -293,7 +313,6 @@ export async function iniciarFichajeConQR(empleadoId: string, qrRaw: string) {
     sucursalId,
     sucursalNombre,
     empleadoNombre: empleado.nombre,
-    tipoSugerido,
   };
 }
 
@@ -352,11 +371,12 @@ export async function confirmarFichajeConQR(
       .eq('id', sucursalId)
       .maybeSingle();
 
+    const tipoFinal = tipoFichaje === 'salida' ? 'salida' : 'entrada';
     const now = new Date();
     const { error: fichajeError } = await supabase.from('fichajes').insert({
       empleado_id: empleado.id,
       sucursal_id: sucursalId,
-      tipo: tipoFichaje,
+      tipo: tipoFinal,
       hora_registro: now.toISOString(),
     });
 
@@ -364,7 +384,7 @@ export async function confirmarFichajeConQR(
 
     return {
       success: true,
-      tipo: tipoFichaje,
+      tipo: tipoFinal,
       sucursal: suc?.nombre || 'Sede registrada',
       hora: now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
     };

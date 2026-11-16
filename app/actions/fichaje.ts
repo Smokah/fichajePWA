@@ -11,19 +11,33 @@ import { normalizeBranchCode, normalizeEmail, normalizeName, sha256Hex } from '@
 import { CHALLENGE_TTL_MINUTES, RP_NAME, getWebAuthnConfig } from '@/lib/webauthn-config';
 
 type ChallengePurpose = 'registration' | 'authentication';
-type ActionResult = { success: true } | { success: false; error: string };
+type ActionResult =
+  | { success: true; tipo: 'entrada' | 'salida'; sucursal: string; hora: string }
+  | { success: false; error: string };
 
-async function getEmpleado(email: string) {
+async function getEmpleadoByEmail(email: string) {
   const supabase = getSupabaseAdmin();
   const normalizedEmail = normalizeEmail(email);
   const { data, error } = await supabase
     .from('empleados')
-    .select('id, nombre, email')
+    .select('id, nombre, email, sucursal_id, sucursales(nombre)')
     .eq('email', normalizedEmail)
     .maybeSingle();
 
   if (error) throw new Error('No se pudo consultar el empleado.');
-  if (!data) throw new Error('El correo no está registrado. Registrate primero en /registro.');
+  if (!data) throw new Error('El correo no está registrado.');
+  return data;
+}
+
+async function getEmpleadoById(empleadoId: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('empleados')
+    .select('id, nombre, email, sucursal_id, sucursales(nombre)')
+    .eq('id', empleadoId)
+    .maybeSingle();
+
+  if (error || !data) throw new Error('Dispositivo no vinculado. Realizá el alta por única vez.');
   return data;
 }
 
@@ -47,7 +61,7 @@ async function guardarChallenge(args: {
     expires_at: expiresAt,
   });
 
-  if (error) throw new Error('No se pudo iniciar la operación biométrica.');
+  if (error) throw new Error('No se pudo iniciar la validación biométrica.');
   return challengeId;
 }
 
@@ -57,7 +71,7 @@ async function consumirChallenge(
   purpose: ChallengePurpose,
 ): Promise<{ challenge: string }> {
   if (!/^[0-9a-f-]{36}$/i.test(String(challengeId ?? ''))) {
-    throw new Error('La operación expiró o no es válida.');
+    throw new Error('La sesión biométrica expiró.');
   }
 
   const supabase = getSupabaseAdmin();
@@ -73,10 +87,13 @@ async function consumirChallenge(
     .select('challenge')
     .maybeSingle();
 
-  if (error || !data) throw new Error('El desafío venció o ya fue utilizado. Volvé a intentarlo.');
+  if (error || !data) throw new Error('El desafío expiró. Volvé a escanear el QR.');
   return data;
 }
 
+/**
+ * 1. ALTA ÚNICA DEL EMPLEADO
+ */
 export async function iniciarAltaEmpleado(nombre: string, email: string, branchCode: string) {
   const normalizedName = normalizeName(nombre);
   const normalizedEmail = normalizeEmail(email);
@@ -95,12 +112,12 @@ export async function iniciarAltaEmpleado(nombre: string, email: string, branchC
     if (msg.includes('CODIGO_SUCURSAL_INVALIDO')) throw new Error('Código de sucursal incorrecto, vencido o revocado.');
     if (msg.includes('CODIGO_SUCURSAL_SIN_CUPOS')) throw new Error('El código alcanzó el máximo de altas permitido.');
     if (msg.includes('EMAIL_OTRA_SUCURSAL')) throw new Error('Este correo ya está registrado en otra sucursal.');
-    if (msg.includes('EMAIL_DUPLICADO')) throw new Error('Correo duplicado. Contactá al administrador.');
+    if (msg.includes('EMAIL_DUPLICADO')) throw new Error('Correo duplicado. Contactá a administración.');
     throw new Error('No se pudo completar el alta.');
   }
 
   const empleado = Array.isArray(data) ? data[0] : data;
-  if (!empleado?.id || !empleado?.nombre) throw new Error('Error al crear el registro del empleado.');
+  if (!empleado?.id || !empleado?.nombre) throw new Error('Error al crear el registro.');
 
   const { data: existingCredentials } = await supabase
     .from('credenciales_biometricas')
@@ -108,7 +125,7 @@ export async function iniciarAltaEmpleado(nombre: string, email: string, branchC
     .eq('empleado_id', empleado.id);
 
   if (existingCredentials && existingCredentials.length > 0) {
-    throw new Error('Este empleado ya tiene un celular vinculado. Solicitá resetearlo al administrador.');
+    throw new Error('Este usuario ya tiene un celular vinculado. Si cambiaste de teléfono, pedí resetearlo en Administración.');
   }
 
   const { rpID } = getWebAuthnConfig();
@@ -139,9 +156,9 @@ export async function verificarRegistro(
   email: string,
   response: unknown,
   challengeId: string,
-): Promise<ActionResult> {
+) {
   try {
-    const empleado = await getEmpleado(email);
+    const empleado = await getEmpleadoByEmail(email);
     const pending = await consumirChallenge(challengeId, empleado.id, 'registration');
     const { rpID, origin } = getWebAuthnConfig();
 
@@ -154,7 +171,7 @@ export async function verificarRegistro(
     });
 
     if (!verification.verified || !verification.registrationInfo) {
-      return { success: false, error: 'El sensor biométrico no pudo verificarse.' };
+      return { success: false as const, error: 'El sensor biométrico no pudo verificarse.' };
     }
 
     const { credential } = verification.registrationInfo;
@@ -167,25 +184,80 @@ export async function verificarRegistro(
       created_at: new Date().toISOString(),
     });
 
-    if (insertError) return { success: false, error: 'No se pudo guardar la credencial biométrica.' };
-    return { success: true };
+    if (insertError) return { success: false as const, error: 'No se pudo guardar la credencial biométrica.' };
+
+    return {
+      success: true as const,
+      perfil: {
+        empleadoId: empleado.id,
+        nombre: empleado.nombre,
+        email: empleado.email,
+        sucursal: (empleado.sucursales as any)?.nombre || 'Sede asignada',
+      },
+    };
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Error en registro biométrico.' };
+    return { success: false as const, error: error instanceof Error ? error.message : 'Error en registro biométrico.' };
   }
 }
 
-export async function generarOpcionesAutenticacion(email: string) {
-  const empleado = await getEmpleado(email);
+/**
+ * 2. VALIDACIÓN DE QR DE SUCURSAL + PREPARACIÓN BIOMÉTRICA (SIN PEDIR EMAIL)
+ */
+export async function iniciarFichajeConQR(empleadoId: string, qrTokenRaw: string) {
+  const token = String(qrTokenRaw ?? '').trim();
+  if (!token) throw new Error('Código QR vacío o ilegible.');
+
+  // Permitir que el QR contenga solo el token hex o una URL completa (?qr=TOKEN)
+  let extractedToken = token;
+  try {
+    if (token.startsWith('http://') || token.startsWith('https://')) {
+      const url = new URL(token);
+      extractedToken = url.searchParams.get('qr') || token;
+    }
+  } catch {
+    // mantener token original
+  }
+
   const supabase = getSupabaseAdmin();
-  const { data: credentials, error } = await supabase
+
+  // Verificar que el QR pertenezca a una sucursal válida
+  const { data: sucursal, error: sucError } = await supabase
+    .from('sucursales')
+    .select('id, nombre')
+    .eq('qr_token', extractedToken)
+    .maybeSingle();
+
+  if (sucError || !sucursal) {
+    throw new Error('Código QR no válido o no pertenece a ninguna sucursal habilitada.');
+  }
+
+  // Verificar empleado vinculado en este dispositivo
+  const empleado = await getEmpleadoById(empleadoId);
+
+  const { data: credentials, error: credError } = await supabase
     .from('credenciales_biometricas')
     .select('credential_id')
     .eq('empleado_id', empleado.id);
 
-  if (error) throw new Error('Error consultando credenciales.');
-  if (!credentials || credentials.length === 0) {
-    throw new Error('Este empleado aún no vinculó su celular. Hacelo primero en /registro.');
+  if (credError || !credentials || credentials.length === 0) {
+    throw new Error('Tu dispositivo ya no está vinculado. Realizá el alta nuevamente.');
   }
+
+  // Detectar automáticamente si corresponde Entrada o Salida según la última marca de hoy
+  const inicioDia = new Date();
+  inicioDia.setHours(0, 0, 0, 0);
+
+  const { data: ultimoFichaje } = await supabase
+    .from('fichajes')
+    .select('tipo')
+    .eq('empleado_id', empleado.id)
+    .gte('hora_registro', inicioDia.toISOString())
+    .order('hora_registro', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const tipoSugerido: 'entrada' | 'salida' =
+    ultimoFichaje && String(ultimoFichaje.tipo).toLowerCase() === 'entrada' ? 'salida' : 'entrada';
 
   const { rpID } = getWebAuthnConfig();
   const options = await generateAuthenticationOptions({
@@ -200,17 +272,25 @@ export async function generarOpcionesAutenticacion(email: string) {
     challenge: options.challenge,
   });
 
-  return { options, challengeId };
+  return {
+    options,
+    challengeId,
+    sucursalId: sucursal.id,
+    sucursalNombre: sucursal.nombre,
+    empleadoNombre: empleado.nombre,
+    tipoSugerido,
+  };
 }
 
-export async function verificarAutenticacion(
-  email: string,
+export async function confirmarFichajeConQR(
+  empleadoId: string,
+  sucursalId: number,
   response: unknown,
   challengeId: string,
-  tipoFichaje: string,
+  tipoFichaje: 'entrada' | 'salida',
 ): Promise<ActionResult> {
   try {
-    const empleado = await getEmpleado(email);
+    const empleado = await getEmpleadoById(empleadoId);
     const responseId = (response as { id?: unknown } | null)?.id;
     if (typeof responseId !== 'string' || !responseId) {
       throw new Error('Identificador biométrico inválido.');
@@ -224,7 +304,7 @@ export async function verificarAutenticacion(
       .eq('empleado_id', empleado.id)
       .maybeSingle();
 
-    if (!credentialRow) throw new Error('Esta huella no corresponde a este empleado.');
+    if (!credentialRow) throw new Error('La huella no coincide con el titular de este dispositivo.');
 
     const pending = await consumirChallenge(challengeId, empleado.id, 'authentication');
     const { rpID, origin } = getWebAuthnConfig();
@@ -243,10 +323,7 @@ export async function verificarAutenticacion(
       },
     });
 
-    if (!verification.verified) return { success: false, error: 'Firma biométrica inválida.' };
-
-    const tipo = String(tipoFichaje ?? '').trim().toLowerCase();
-    if (tipo !== 'entrada' && tipo !== 'salida') throw new Error('Tipo de fichaje inválido.');
+    if (!verification.verified) return { success: false, error: 'Verificación biométrica rechazada.' };
 
     await supabase
       .from('credenciales_biometricas')
@@ -254,15 +331,29 @@ export async function verificarAutenticacion(
       .eq('credential_id', credentialRow.credential_id)
       .eq('empleado_id', empleado.id);
 
+    const { data: suc } = await supabase
+      .from('sucursales')
+      .select('nombre')
+      .eq('id', sucursalId)
+      .maybeSingle();
+
+    const now = new Date();
     const { error: fichajeError } = await supabase.from('fichajes').insert({
       empleado_id: empleado.id,
-      tipo,
-      hora_registro: new Date().toISOString(),
+      sucursal_id: sucursalId,
+      tipo: tipoFichaje,
+      hora_registro: now.toISOString(),
     });
 
-    if (fichajeError) throw new Error('Error guardando el fichaje.');
-    return { success: true };
+    if (fichajeError) throw new Error('Error guardando la marca en base de datos.');
+
+    return {
+      success: true,
+      tipo: tipoFichaje,
+      sucursal: suc?.nombre || 'Sede registrada',
+      hora: now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+    };
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'No se pudo completar el fichaje.' };
+    return { success: false, error: error instanceof Error ? error.message : 'No se pudo registrar la asistencia.' };
   }
 }

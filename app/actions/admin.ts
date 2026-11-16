@@ -80,7 +80,7 @@ export async function obtenerDatosAdministrativos(
   }
 
   const [sucursalesRes, empleadosRes, fichajesRes, adminsRes] = await Promise.all([
-    supabase.from('sucursales').select('id, nombre').order('id', { ascending: true }),
+    supabase.from('sucursales').select('id, nombre, qr_token').order('id', { ascending: true }),
     supabase
       .from('empleados')
       .select('id, nombre, email, sucursal_id, sucursales(nombre), credenciales_biometricas(id)')
@@ -294,4 +294,23 @@ export async function registrarFichajeManualAdmin(
   });
   if (error) throw new Error('Error registrando fichaje manual: ' + error.message);
   return { success: true };
+}
+
+export async function regenerarQrSucursalAdmin(
+  credenciales: { identificador: string; pin: string },
+  sucursalId: number
+) {
+  await verificarAutorizacion(credenciales);
+  const randomBytes = new Uint8Array(12);
+  crypto.getRandomValues(randomBytes);
+  const nuevoToken = Array.from(randomBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from('sucursales')
+    .update({ qr_token: nuevoToken })
+    .eq('id', sucursalId);
+
+  if (error) throw new Error('No se pudo regenerar el QR: ' + error.message);
+  return { qrToken: nuevoToken };
 }

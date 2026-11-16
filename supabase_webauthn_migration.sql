@@ -1,15 +1,31 @@
 -- ============================================================================
--- ESQUEMA MODULAR Y MIGRACIÓN PARA PWA DE FICHAJES + PANEL ADMINISTRATIVO
+-- ESQUEMA CON FICHAJE POR QR DE SUCURSAL + BIOMETRÍA ÚNICA
 -- Ejecutar en Supabase > SQL Editor
 -- ============================================================================
 
 create extension if not exists pgcrypto with schema extensions;
 
--- 1. Sucursales
+-- 1. Sucursales con token QR único por sede
 create table if not exists public.sucursales (
   id serial primary key,
-  nombre text not null
+  nombre text not null,
+  qr_token text unique default encode(extensions.gen_random_bytes(12), 'hex')
 );
+
+alter table public.sucursales add column if not exists qr_token text;
+update public.sucursales
+set qr_token = encode(extensions.gen_random_bytes(12), 'hex')
+where qr_token is null;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'sucursales_qr_token_key'
+  ) then
+    alter table public.sucursales add constraint sucursales_qr_token_key unique (qr_token);
+  end if;
+exception when others then null;
+end $$;
 
 -- 2. Empleados
 create table if not exists public.empleados (
@@ -34,13 +50,16 @@ create table if not exists public.credenciales_biometricas (
   created_at timestamptz not null default now()
 );
 
--- 4. Fichajes
+-- 4. Fichajes (ahora registra también en qué sucursal escaneó el QR!)
 create table if not exists public.fichajes (
   id serial primary key,
   empleado_id uuid not null references public.empleados(id) on delete cascade,
+  sucursal_id integer references public.sucursales(id) on delete set null,
   tipo text not null,
   hora_registro timestamptz not null default now()
 );
+
+alter table public.fichajes add column if not exists sucursal_id integer references public.sucursales(id) on delete set null;
 
 do $$
 declare
@@ -69,9 +88,6 @@ create table if not exists public.webauthn_challenges (
   created_at timestamptz not null default now()
 );
 
-create index if not exists webauthn_challenges_expiration_idx on public.webauthn_challenges (expires_at);
-create index if not exists webauthn_challenges_employee_purpose_idx on public.webauthn_challenges (employee_id, purpose);
-
 -- 6. Códigos de Alta por Sucursal
 create table if not exists public.codigos_alta_sucursal (
   id uuid primary key default gen_random_uuid(),
@@ -85,7 +101,7 @@ create table if not exists public.codigos_alta_sucursal (
   constraint codigos_alta_sucursal_usos_limite check (usos <= max_usos)
 );
 
--- 7. Usuarios Administrativos (CRUD de Operadores / RRHH / Supervisores)
+-- 7. Usuarios Administrativos
 create table if not exists public.usuarios_admin (
   id uuid primary key default gen_random_uuid(),
   nombre text not null,
@@ -97,7 +113,7 @@ create table if not exists public.usuarios_admin (
   created_at timestamptz not null default now()
 );
 
--- 8. Función RPC transaccional de alta de empleados
+-- 8. RPC transaccional de alta única
 create or replace function public.registrar_empleado_con_codigo_sucursal(
   p_nombre text,
   p_email text,
@@ -204,7 +220,6 @@ grant all on table public.fichajes to service_role;
 grant all on table public.usuarios_admin to service_role;
 grant usage, select on all sequences in schema public to service_role;
 
--- 10. Sucursal inicial por defecto
 insert into public.sucursales (nombre)
 select 'Sucursal Central'
 where not exists (select 1 from public.sucursales);

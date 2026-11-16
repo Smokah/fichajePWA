@@ -2,12 +2,14 @@
 
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { startRegistration } from '@simplewebauthn/browser';
 import { iniciarAltaEmpleado, verificarRegistro } from '../actions/fichaje';
 
-const STORAGE_EMAIL_KEY = 'fichajes_pwa_empleado_email';
+export const STORAGE_PERFIL_KEY = 'accesomovil_perfil_v1';
 
 export default function RegistroBiometrico() {
+  const router = useRouter();
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [codigo, setCodigo] = useState('');
@@ -31,19 +33,19 @@ export default function RegistroBiometrico() {
         setEstado(`Hola ${empleadoNombre}. Confirmá tu huella o bloqueo en el dispositivo...`);
         const response = await startRegistration({ optionsJSON: options });
 
-        setEstado('Guardando credencial de seguridad...');
+        setEstado('Vinculando dispositivo...');
         const result = await verificarRegistro(email, response, challengeId);
 
         if (result.success) {
-          window.localStorage.setItem(STORAGE_EMAIL_KEY, email.trim().toLowerCase());
+          window.localStorage.setItem(STORAGE_PERFIL_KEY, JSON.stringify(result.perfil));
           setCompletado(true);
-          setEstado('Dispositivo vinculado correctamente. Ya podés registrar asistencia.');
-          setCodigo('');
+          setEstado('Alta completada. Redirigiendo al escáner QR...');
+          setTimeout(() => router.push('/'), 1200);
         } else {
           setEstado(result.error);
         }
       } catch (error) {
-        setEstado(error instanceof Error ? error.message : 'No se pudo completar la vinculación.');
+        setEstado(error instanceof Error ? error.message : 'No se pudo completar el alta.');
       }
     });
   };
@@ -52,17 +54,17 @@ export default function RegistroBiometrico() {
     <main className="flex min-h-screen flex-col justify-between bg-slate-50 px-5 py-6">
       <header className="mx-auto flex w-full max-w-md items-center justify-between border-b border-slate-200 pb-4">
         <Link href="/" className="text-xs font-medium text-slate-600 hover:text-slate-900">
-          ← Volver a Terminal
+          ← Volver
         </Link>
-        <span className="text-xs font-semibold text-slate-400">Alta de Personal</span>
+        <span className="text-xs font-semibold text-slate-400">Alta Única de Dispositivo</span>
       </header>
 
       <section className="mx-auto my-auto w-full max-w-md">
         <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm space-y-6">
           <div className="border-b border-slate-100 pb-4">
-            <h1 className="text-lg font-semibold text-slate-900">Vinculación de Dispositivo</h1>
+            <h1 className="text-lg font-semibold text-slate-900">Vincular Teléfono (Única Vez)</h1>
             <p className="text-xs text-slate-500 mt-1">
-              Completá tus datos y el código provisto por Recursos Humanos para habilitar tu terminal móvil.
+              Este registro se realiza una sola vez. Luego solo deberás escanear el QR de la sucursal para marcar asistencia.
             </p>
           </div>
 
@@ -104,7 +106,7 @@ export default function RegistroBiometrico() {
                 autoCapitalize="none"
                 spellCheck={false}
                 maxLength={16}
-                placeholder="16 caracteres alfanuméricos"
+                placeholder="16 caracteres"
                 value={codigo}
                 onChange={(event) => setCodigo(event.target.value.replace(/[^a-fA-F0-9]/g, '').slice(0, 16))}
                 disabled={isPending}
@@ -117,7 +119,7 @@ export default function RegistroBiometrico() {
               disabled={isPending}
               className="w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:opacity-50"
             >
-              {isPending ? 'Validando...' : 'Vincular Dispositivo'}
+              {isPending ? 'Registrando...' : 'Completar Alta y Vincular Huella'}
             </button>
           </div>
 
@@ -134,20 +136,11 @@ export default function RegistroBiometrico() {
               {estado}
             </div>
           )}
-
-          {completado && (
-            <Link
-              href="/"
-              className="block w-full rounded-xl border border-slate-900 bg-white py-2.5 text-center text-xs font-semibold text-slate-900 hover:bg-slate-50"
-            >
-              Ir a registrar asistencia →
-            </Link>
-          )}
         </div>
       </section>
 
       <footer className="mx-auto w-full max-w-md text-center text-[11px] text-slate-400">
-        Uso exclusivo personal autorizado
+        AccesoMóvil Enterprise
       </footer>
     </main>
   );

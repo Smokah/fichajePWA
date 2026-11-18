@@ -158,8 +158,12 @@ function TerminalContenido() {
           </div>
           <span className="text-sm font-semibold tracking-tight text-slate-900">AccesoMóvil</span>
         </div>
-        <nav className="flex items-center gap-3 text-xs font-medium text-slate-600">
+        <nav className="flex items-center gap-2.5 text-xs font-medium text-slate-600">
           <AyudaYDemoButtons />
+          <span className="text-slate-300">|</span>
+          <Link href="/kiosco" className="hover:text-slate-900 transition-colors">
+            Kiosco
+          </Link>
           <span className="text-slate-300">|</span>
           <Link href="/panel" className="hover:text-slate-900 transition-colors">
             Admin

@@ -19,5 +19,21 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Modo Kiosco (QR Sucursal)",
+      "short_name": "Kiosco",
+      "description": "Abrir pantalla generadora de QR dinámico para sucursal",
+      "url": "/kiosco",
+      "icons": [{ "src": "/icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Panel Administrativo",
+      "short_name": "Admin",
+      "description": "Reportes de horas, sucursales y auditoría",
+      "url": "/panel",
+      "icons": [{ "src": "/icon-192x192.png", "sizes": "192x192" }]
+    }
   ]
 }

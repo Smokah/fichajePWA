@@ -72,11 +72,12 @@ export async function obtenerDatosAdministrativos(
     .order('hora_registro', { ascending: false })
     .limit(1000);
 
+  // Límites exactos en horario de Argentina (UTC-3)
   if (filtros?.fechaDesde) {
-    queryFichajes = queryFichajes.gte('hora_registro', `${filtros.fechaDesde}T00:00:00.000Z`);
+    queryFichajes = queryFichajes.gte('hora_registro', `${filtros.fechaDesde}T00:00:00.000-03:00`);
   }
   if (filtros?.fechaHasta) {
-    queryFichajes = queryFichajes.lte('hora_registro', `${filtros.fechaHasta}T23:59:59.999Z`);
+    queryFichajes = queryFichajes.lte('hora_registro', `${filtros.fechaHasta}T23:59:59.999-03:00`);
   }
 
   const [sucursalesRes, empleadosRes, fichajesRes, adminsRes] = await Promise.all([
@@ -283,14 +284,21 @@ export async function registrarFichajeManualAdmin(
   credenciales: { identificador: string; pin: string },
   empleadoId: string,
   tipo: 'entrada' | 'salida',
-  fechaHoraIso: string
+  fechaHoraLocal: string
 ) {
   await verificarAutorizacion(credenciales);
   const supabase = getSupabaseAdmin();
+
+  // Interpretar el input datetime-local (YYYY-MM-DDTHH:mm) explícitamente en horario Argentina (-03:00)
+  const cleanFecha = String(fechaHoraLocal ?? '').trim();
+  const isoArgentina = cleanFecha.includes('Z') || /[+-]\d{2}:\d{2}$/.test(cleanFecha)
+    ? new Date(cleanFecha).toISOString()
+    : new Date(`${cleanFecha}:00-03:00`).toISOString();
+
   const { error } = await supabase.from('fichajes').insert({
     empleado_id: empleadoId,
     tipo,
-    hora_registro: new Date(fechaHoraIso).toISOString(),
+    hora_registro: isoArgentina,
   });
   if (error) throw new Error('Error registrando fichaje manual: ' + error.message);
   return { success: true };

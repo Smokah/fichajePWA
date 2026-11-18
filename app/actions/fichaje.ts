@@ -10,10 +10,22 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 import { normalizeBranchCode, normalizeEmail, normalizeName, sha256Hex } from '@/lib/validators';
 import { CHALLENGE_TTL_MINUTES, RP_NAME, getWebAuthnConfig } from '@/lib/webauthn-config';
 
+const TZ_ARGENTINA = 'America/Argentina/Buenos_Aires';
+
 type ChallengePurpose = 'registration' | 'authentication';
 type ActionResult =
   | { success: true; tipo: 'entrada' | 'salida'; sucursal: string; hora: string }
   | { success: false; error: string };
+
+function getInicioDiaArgentinaISO(): string {
+  const fechaAr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ_ARGENTINA,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  return new Date(`${fechaAr}T00:00:00.000-03:00`).toISOString();
+}
 
 async function getEmpleadoByEmail(email: string) {
   const supabase = getSupabaseAdmin();
@@ -91,23 +103,19 @@ async function consumirChallenge(
   return data;
 }
 
-/**
- * Consulta la última marca de hoy para sugerir Entrada o Salida en la interfaz
- */
 export async function obtenerSugerenciaTurno(empleadoId: string): Promise<{
   sugerencia: 'entrada' | 'salida';
   ultimaMarca: { tipo: string; hora: string; sucursal: string } | null;
 }> {
   try {
     const supabase = getSupabaseAdmin();
-    const inicioDia = new Date();
-    inicioDia.setHours(0, 0, 0, 0);
+    const inicioDiaIso = getInicioDiaArgentinaISO();
 
     const { data: ultimo } = await supabase
       .from('fichajes')
       .select('tipo, hora_registro, sucursales(nombre)')
       .eq('empleado_id', empleadoId)
-      .gte('hora_registro', inicioDia.toISOString())
+      .gte('hora_registro', inicioDiaIso)
       .order('hora_registro', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -121,7 +129,11 @@ export async function obtenerSugerenciaTurno(empleadoId: string): Promise<{
       sugerencia: esEntrada ? 'salida' : 'entrada',
       ultimaMarca: {
         tipo: esEntrada ? 'Entrada' : 'Salida',
-        hora: new Date(ultimo.hora_registro).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+        hora: new Date(ultimo.hora_registro).toLocaleTimeString('es-AR', {
+          timeZone: TZ_ARGENTINA,
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
         sucursal: (ultimo.sucursales as any)?.nombre || 'Sede',
       },
     };
@@ -130,9 +142,6 @@ export async function obtenerSugerenciaTurno(empleadoId: string): Promise<{
   }
 }
 
-/**
- * 1. ALTA ÚNICA DEL EMPLEADO
- */
 export async function iniciarAltaEmpleado(nombre: string, email: string, branchCode: string) {
   const normalizedName = normalizeName(nombre);
   const normalizedEmail = normalizeEmail(email);
@@ -239,9 +248,6 @@ export async function verificarRegistro(
   }
 }
 
-/**
- * 2. VALIDACIÓN ATÓMICA DE QR DINÁMICO DE UN SOLO USO + PREPARACIÓN BIOMÉTRICA
- */
 export async function iniciarFichajeConQR(empleadoId: string, qrRaw: string) {
   const raw = String(qrRaw ?? '').trim();
   if (!raw) throw new Error('Código QR vacío o ilegible.');
@@ -272,7 +278,6 @@ export async function iniciarFichajeConQR(empleadoId: string, qrRaw: string) {
     throw new Error('Tu dispositivo ya no está vinculado. Realizá el alta nuevamente.');
   }
 
-  // Consumo atómico de un solo uso
   const nowIso = new Date().toISOString();
   const { data: qrConsumido, error: qrError } = await supabase
     .from('qr_tokens_dinamicos')
@@ -386,7 +391,11 @@ export async function confirmarFichajeConQR(
       success: true,
       tipo: tipoFinal,
       sucursal: suc?.nombre || 'Sede registrada',
-      hora: now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+      hora: now.toLocaleTimeString('es-AR', {
+        timeZone: TZ_ARGENTINA,
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
     };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'No se pudo registrar la asistencia.' };

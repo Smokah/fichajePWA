@@ -10,6 +10,15 @@ import { UsuariosAdminTab } from '@/components/panel/UsuariosAdminTab';
 
 type TabKey = 'reportes' | 'registros' | 'sucursales' | 'admins';
 
+function getFechaArgentinaISO(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 export default function PanelAdministrativo() {
   const [identificador, setIdentificador] = useState('');
   const [pin, setPin] = useState('');
@@ -17,7 +26,7 @@ export default function PanelAdministrativo() {
   const [error, setError] = useState('');
   const [tab, setTab] = useState<TabKey>('reportes');
 
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = getFechaArgentinaISO();
   const inicioMes = `${hoy.slice(0, 8)}01`;
   const [fechaDesde, setFechaDesde] = useState(inicioMes);
   const [fechaHasta, setFechaHasta] = useState(hoy);
@@ -123,7 +132,6 @@ export default function PanelAdministrativo() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      {/* Top Navbar Empresarial */}
       <header className="border-b border-slate-200 bg-white print:border-none">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-4 md:px-8">
           <div className="flex items-center gap-3">
@@ -162,7 +170,6 @@ export default function PanelAdministrativo() {
           </div>
         </div>
 
-        {/* Pestañas de Navegación Corporativa */}
         <div className="mx-auto max-w-6xl px-4 md:px-8 print:hidden">
           <nav className="-mb-px flex space-x-6 overflow-x-auto">
             <button
@@ -212,7 +219,6 @@ export default function PanelAdministrativo() {
       </header>
 
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-8">
-        {/* Barra de Filtros */}
         <div className="flex flex-wrap items-end gap-4 rounded-xl border border-slate-200 bg-white p-4 print:hidden">
           <div>
             <label className="block text-[11px] font-medium text-slate-500 mb-1">Fecha desde</label>
@@ -260,7 +266,6 @@ export default function PanelAdministrativo() {
           )}
         </div>
 
-        {/* Vistas Modulares */}
         {tab === 'reportes' && (
           <ReportesTab
             fichajes={datos.fichajes}

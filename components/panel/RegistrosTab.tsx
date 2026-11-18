@@ -4,6 +4,8 @@ import { useState, useTransition } from 'react';
 import { registrarFichajeManualAdmin } from '@/app/actions/admin';
 import type { FichajeRaw } from '@/lib/horas-utils';
 
+const TZ_ARGENTINA = 'America/Argentina/Buenos_Aires';
+
 interface RegistrosTabProps {
   credenciales: { identificador: string; pin: string };
   fichajes: FichajeRaw[];
@@ -35,7 +37,7 @@ export function RegistrosTab({ credenciales, fichajes, empleados, onRefresh }: R
       <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-3">
         <div>
           <h3 className="text-sm font-semibold text-slate-900">Corrección Manual de Asistencia</h3>
-          <p className="text-xs text-slate-500">Carga administrativa ante omisión de marca biométrica</p>
+          <p className="text-xs text-slate-500">Carga administrativa ante omisión de marca biométrica (Hora Argentina)</p>
         </div>
         <div className="grid gap-3 md:grid-cols-4">
           <select
@@ -83,7 +85,7 @@ export function RegistrosTab({ credenciales, fichajes, empleados, onRefresh }: R
                 <th className="py-3 px-3">Colaborador</th>
                 <th className="py-3 px-3">Sucursal</th>
                 <th className="py-3 px-3">Movimiento</th>
-                <th className="py-3 px-3 text-right">Fecha y Hora</th>
+                <th className="py-3 px-3 text-right">Fecha y Hora (ART)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -97,6 +99,7 @@ export function RegistrosTab({ credenciales, fichajes, empleados, onRefresh }: R
                 fichajes.map((f) => {
                   const esEntrada = String(f.tipo).toLowerCase() === 'entrada';
                   const fecha = new Date(f.hora_registro).toLocaleString('es-AR', {
+                    timeZone: TZ_ARGENTINA,
                     day: '2-digit',
                     month: '2-digit',
                     year: 'numeric',

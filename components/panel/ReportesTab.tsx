@@ -3,6 +3,8 @@
 import { useMemo } from 'react';
 import { calcularEstadisticasEmpleados, formatearDuracion, type FichajeRaw } from '@/lib/horas-utils';
 
+const TZ_ARGENTINA = 'America/Argentina/Buenos_Aires';
+
 interface ReportesTabProps {
   fichajes: FichajeRaw[];
   totalEmpleados: number;
@@ -25,7 +27,7 @@ export function ReportesTab({ fichajes, totalEmpleados, rangoFechas }: ReportesT
   }, [resumenEmpleados, fichajes.length]);
 
   const exportarCSVResumen = () => {
-    const sep = ';'; // Punto y coma para apertura directa en Excel en español
+    const sep = ';';
     const headers = ['Empleado', 'Correo', 'Sucursal', 'Entradas', 'Salidas', 'Horas Trabajadas', 'Minutos', 'Estado'];
     const rows = resumenEmpleados.map((r) => [
       `"${r.nombre}"`,
@@ -50,7 +52,7 @@ export function ReportesTab({ fichajes, totalEmpleados, rangoFechas }: ReportesT
 
   const exportarCSVDetallado = () => {
     const sep = ';';
-    const headers = ['ID', 'Empleado', 'Correo', 'Sucursal', 'Movimiento', 'Fecha', 'Hora'];
+    const headers = ['ID', 'Empleado', 'Correo', 'Sucursal', 'Movimiento', 'Fecha (ART)', 'Hora (ART)'];
     const rows = fichajes.map((f) => {
       const dt = new Date(f.hora_registro);
       return [
@@ -59,8 +61,8 @@ export function ReportesTab({ fichajes, totalEmpleados, rangoFechas }: ReportesT
         `"${f.empleados?.email || ''}"`,
         `"${(f as any).sucursales?.nombre || f.empleados?.sucursales?.nombre || 'Sin sucursal'}"`,
         `"${String(f.tipo).toUpperCase()}"`,
-        `"${dt.toLocaleDateString('es-AR')}"`,
-        `"${dt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}"`,
+        `"${dt.toLocaleDateString('es-AR', { timeZone: TZ_ARGENTINA })}"`,
+        `"${dt.toLocaleTimeString('es-AR', { timeZone: TZ_ARGENTINA, hour: '2-digit', minute: '2-digit', second: '2-digit' })}"`,
       ];
     });
     const bom = '\uFEFF';
@@ -80,7 +82,6 @@ export function ReportesTab({ fichajes, totalEmpleados, rangoFechas }: ReportesT
 
   return (
     <div className="space-y-6">
-      {/* KPIs sobrios */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <p className="text-xs font-medium text-slate-500">Horas Computadas</p>
@@ -104,13 +105,12 @@ export function ReportesTab({ fichajes, totalEmpleados, rangoFechas }: ReportesT
         </div>
       </div>
 
-      {/* Tabla Resumen + Barra de Exportación */}
       <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
             <h2 className="text-base font-semibold text-slate-900">Consolidado de Horas por Empleado</h2>
             <p className="text-xs text-slate-500">
-              Período: {rangoFechas.desde} al {rangoFechas.hasta}
+              Período: {rangoFechas.desde} al {rangoFechas.hasta} (Hora Argentina)
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 print:hidden">

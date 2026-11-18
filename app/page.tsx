@@ -10,6 +10,7 @@ import {
   obtenerSugerenciaTurno,
 } from './actions/fichaje';
 import { QrScanner } from '@/components/QrScanner';
+import { AyudaYDemoButtons } from '@/components/AyudaYDemo';
 import { STORAGE_PERFIL_KEY } from './registro/page';
 
 interface PerfilVinculado {
@@ -157,13 +158,11 @@ function TerminalContenido() {
           </div>
           <span className="text-sm font-semibold tracking-tight text-slate-900">AccesoMóvil</span>
         </div>
-        <nav className="flex items-center gap-4 text-xs font-medium text-slate-600">
-          <Link href="/kiosco" className="hover:text-slate-900 transition-colors">
-            Modo Kiosco
-          </Link>
+        <nav className="flex items-center gap-3 text-xs font-medium text-slate-600">
+          <AyudaYDemoButtons />
           <span className="text-slate-300">|</span>
           <Link href="/panel" className="hover:text-slate-900 transition-colors">
-            Administración
+            Admin
           </Link>
         </nav>
       </header>

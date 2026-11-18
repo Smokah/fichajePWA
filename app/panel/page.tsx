@@ -7,6 +7,7 @@ import { ReportesTab } from '@/components/panel/ReportesTab';
 import { RegistrosTab } from '@/components/panel/RegistrosTab';
 import { SucursalesEmpleadosTab } from '@/components/panel/SucursalesEmpleadosTab';
 import { UsuariosAdminTab } from '@/components/panel/UsuariosAdminTab';
+import { AyudaYDemoButtons } from '@/components/AyudaYDemo';
 
 type TabKey = 'reportes' | 'registros' | 'sucursales' | 'admins';
 
@@ -150,6 +151,7 @@ export default function PanelAdministrativo() {
           </div>
 
           <div className="flex items-center gap-2.5 print:hidden">
+            <AyudaYDemoButtons />
             <button
               onClick={() => cargarDatos()}
               disabled={isPending}

@@ -5,6 +5,8 @@
 En Project Settings > Environment Variables configurar:
 
 - `NEXT_PUBLIC_SUPABASE_URL`: URL del proyecto Supabase.
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: clave publicable/anon de Supabase para las sesiones Auth.
+- `NEXT_PUBLIC_SITE_URL`: URL canónica de producción, por ejemplo `https://accesomovil.vercel.app`.
 - `SUPABASE_SERVICE_ROLE_KEY`: clave `service_role` / secret key de Supabase. Es exclusivamente de servidor; nunca debe llevar prefijo `NEXT_PUBLIC_`.
 - `WEBAUTHN_RP_ID`: `accesomovil.vercel.app`
 - `WEBAUTHN_ORIGIN`: `https://accesomovil.vercel.app`
@@ -100,3 +102,7 @@ El empleado abre `https://accesomovil.vercel.app`, ingresa el mismo correo y sel
 El código de sucursal demuestra que la persona conoce el código, pero **no verifica por sí solo la identidad de la persona ni que sea titular del correo ingresado**. Si necesitás validar la titularidad del email, agregá una verificación OTP por correo o aprobación administrativa antes de habilitar el fichaje.
 
 No exponer `SUPABASE_SERVICE_ROLE_KEY` al cliente. No probar Passkeys de producción desde dominios Preview de Vercel: WebAuthn requiere que RP ID y Origin coincidan con el dominio autorizado.
+
+## 7. Acceso administrativo con Supabase Auth
+
+La nueva rama incorpora acceso al panel por enlace seguro de correo. Antes de desplegar, seguir todos los pasos de `docs/ADMIN_SUPABASE_AUTH.md`: configurar SMTP y Redirect URLs, crear/vincular las cuentas Auth existentes y ejecutar `supabase_admin_auth_migration.sql`. No retirar todavía `pin_hash` ni las credenciales heredadas hasta validar todas las cuentas.

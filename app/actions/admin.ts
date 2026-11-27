@@ -1,7 +1,6 @@
 "use server";
 
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { getSupabaseServer } from '@/lib/supabase-server';
 import { requireAdmin, assertEmployeeScope, assertBranchScope, type AdminSession } from '@/lib/admin-auth';
 import { normalizeEmail, normalizeName } from '@/lib/validators';
 
@@ -95,7 +94,6 @@ export async function crearUsuarioAdmin(datos: {
   if (inviteError || !invited.user) throw new Error('No se pudo enviar la invitación. Verificá si el correo ya tiene una cuenta.');
   const { error } = await supabase.from('usuarios_admin').insert({
     nombre, email, rol, sucursal_id: sucursalId, activo: true, auth_user_id: invited.user.id,
-    pin_hash: 'DISABLED_BY_SUPABASE_AUTH',
   });
   if (error) {
     await supabase.auth.admin.deleteUser(invited.user.id);

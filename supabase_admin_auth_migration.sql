@@ -18,3 +18,5 @@ where lower(ua.email) = lower(au.email)
 
 -- Los administradores sin auth_user_id quedan sin acceso a la nueva aplicación.
 -- No se borran ni se desactivan para permitir migración y recuperación controladas.
+
+alter table public.usuarios_admin alter column pin_hash drop not null;

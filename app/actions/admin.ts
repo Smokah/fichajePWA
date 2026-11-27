@@ -89,16 +89,15 @@ export async function crearUsuarioAdmin(datos: {
   const sucursalId = datos.sucursalId && datos.sucursalId !== 'TODAS' ? Number(datos.sucursalId) : null;
   if (rol !== 'superadmin' && !sucursalId) throw new Error('Asigná una sucursal al operador.');
   const supabase = getSupabaseAdmin();
+  const { data: duplicate } = await supabase.from('usuarios_admin').select('id').eq('email', email).maybeSingle();
+  if (duplicate) throw new Error('Ya existe un operador con ese correo.');
   const redirectTo = new URL('/auth/callback?next=/panel', process.env.NEXT_PUBLIC_SITE_URL || 'https://accesomovil.vercel.app').toString();
   const { data: invited, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, { redirectTo });
   if (inviteError || !invited.user) throw new Error('No se pudo enviar la invitación. Verificá si el correo ya tiene una cuenta.');
   const { error } = await supabase.from('usuarios_admin').insert({
     nombre, email, rol, sucursal_id: sucursalId, activo: true, auth_user_id: invited.user.id,
   });
-  if (error) {
-    await supabase.auth.admin.deleteUser(invited.user.id);
-    throw new Error('No se pudo vincular el operador a su cuenta.');
-  }
+  if (error) throw new Error('La invitación se envió, pero no se pudo vincular el operador. Revisá la cuenta antes de reenviar.');
   return { success: true };
 }
 

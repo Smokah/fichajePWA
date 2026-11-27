@@ -7,13 +7,12 @@ import type { FichajeRaw } from '@/lib/horas-utils';
 const TZ_ARGENTINA = 'America/Argentina/Buenos_Aires';
 
 interface RegistrosTabProps {
-  credenciales: { identificador: string; pin: string };
   fichajes: FichajeRaw[];
   empleados: any[];
   onRefresh: () => void;
 }
 
-export function RegistrosTab({ credenciales, fichajes, empleados, onRefresh }: RegistrosTabProps) {
+export function RegistrosTab({ fichajes, empleados, onRefresh }: RegistrosTabProps) {
   const [empManual, setEmpManual] = useState('');
   const [tipoManual, setTipoManual] = useState<'entrada' | 'salida'>('salida');
   const [fechaManual, setFechaManual] = useState('');
@@ -23,7 +22,7 @@ export function RegistrosTab({ credenciales, fichajes, empleados, onRefresh }: R
     if (!empManual || !fechaManual) return alert('Seleccioná colaborador y fecha/hora.');
     startTransition(async () => {
       try {
-        await registrarFichajeManualAdmin(credenciales, empManual, tipoManual, fechaManual);
+        await registrarFichajeManualAdmin(empManual, tipoManual, fechaManual);
         setFechaManual('');
         onRefresh();
       } catch (e) {

@@ -26,7 +26,6 @@ export async function obtenerDatosAdministrativos(
   if (branchId) {
     branchQuery = branchQuery.eq('id', branchId);
     employeesQuery = employeesQuery.eq('sucursal_id', branchId);
-    punchesQuery = punchesQuery.eq('sucursal_id', branchId);
   }
   if (filtros?.fechaDesde) punchesQuery = punchesQuery.gte('hora_registro', `${filtros.fechaDesde}T00:00:00.000-03:00`);
   if (filtros?.fechaHasta) punchesQuery = punchesQuery.lte('hora_registro', `${filtros.fechaHasta}T23:59:59.999-03:00`);
@@ -41,11 +40,13 @@ export async function obtenerDatosAdministrativos(
   if (empleadosRes.error) throw new Error('Error cargando empleados.');
   if (fichajesRes.error) throw new Error('Error cargando fichajes.');
 
+  const fichajes = (fichajesRes.data ?? []).filter((f: any) => !branchId || Number(f.sucursal_id ?? f.empleados?.sucursal_id) === branchId);
+
   return {
     session,
     sucursales: sucursalesRes.data ?? [],
     empleados: empleadosRes.data ?? [],
-    fichajes: fichajesRes.data ?? [],
+    fichajes,
     usuariosAdmin: adminsRes.data ?? [],
   };
 }
@@ -180,8 +181,10 @@ export async function registrarFichajeManualAdmin(
   const date = new Date(`${cleanFecha}:00-03:00`);
   if (Number.isNaN(date.getTime())) throw new Error('Fecha/hora inválida.');
   const supabase = getSupabaseAdmin();
+  const { data: employee, error: employeeError } = await supabase.from('empleados').select('sucursal_id').eq('id', empleadoId).maybeSingle();
+  if (employeeError || !employee) throw new Error('No se encontró el empleado.');
   const { error } = await supabase.from('fichajes').insert({
-    empleado_id: empleadoId, tipo, hora_registro: date.toISOString(),
+    empleado_id: empleadoId, sucursal_id: employee.sucursal_id, tipo, hora_registro: date.toISOString(),
   });
   if (error) throw new Error('Error registrando fichaje manual.');
   return { success: true };

@@ -8,21 +8,18 @@ import {
 } from '@/app/actions/admin';
 
 interface UsuariosAdminTabProps {
-  credenciales: { identificador: string; pin: string };
   usuariosAdmin: any[];
   sucursales: any[];
   onRefresh: () => void;
 }
 
 export function UsuariosAdminTab({
-  credenciales,
   usuariosAdmin,
   sucursales,
   onRefresh,
 }: UsuariosAdminTabProps) {
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
-  const [pinNuevo, setPinNuevo] = useState('');
   const [rol, setRol] = useState('administrativo');
   const [sucursalId, setSucursalId] = useState('TODAS');
   const [editandoId, setEditandoId] = useState<string | null>(null);
@@ -32,7 +29,6 @@ export function UsuariosAdminTab({
   const limpiarFormulario = () => {
     setNombre('');
     setEmail('');
-    setPinNuevo('');
     setRol('administrativo');
     setSucursalId('TODAS');
     setEditandoId(null);
@@ -43,19 +39,17 @@ export function UsuariosAdminTab({
       try {
         setMensaje('');
         if (editandoId) {
-          await actualizarUsuarioAdmin(credenciales, editandoId, {
+          await actualizarUsuarioAdmin(editandoId, {
             nombre,
             rol,
             sucursalId,
             activo: true,
-            pinNuevo: pinNuevo || undefined,
           });
           setMensaje('Permisos actualizados correctamente.');
         } else {
-          await crearUsuarioAdmin(credenciales, {
+          await crearUsuarioAdmin({
             nombre,
             email,
-            pinNuevo,
             rol,
             sucursalId,
           });
@@ -82,7 +76,7 @@ export function UsuariosAdminTab({
   const handleToggleActivo = (u: any) => {
     startTransition(async () => {
       try {
-        await actualizarUsuarioAdmin(credenciales, u.id, {
+        await actualizarUsuarioAdmin(u.id, {
           nombre: u.nombre,
           rol: u.rol,
           sucursalId: u.sucursal_id ? String(u.sucursal_id) : 'TODAS',
@@ -99,7 +93,7 @@ export function UsuariosAdminTab({
     if (!confirm(`¿Revocar y eliminar permanentemente el acceso de ${u.nombre}?`)) return;
     startTransition(async () => {
       try {
-        await eliminarUsuarioAdmin(credenciales, u.id);
+        await eliminarUsuarioAdmin(u.id);
         onRefresh();
       } catch (e) {
         setMensaje(e instanceof Error ? e.message : 'Error eliminando operador.');
@@ -116,7 +110,7 @@ export function UsuariosAdminTab({
               {editandoId ? 'Modificar Operador' : 'Alta de Operador Administrativo'}
             </h2>
             <p className="text-xs text-slate-500">
-              Asignación de credenciales para personal de RRHH o encargados de sucursal
+              Se enviará una invitación segura al correo para activar el acceso
             </p>
           </div>
           {editandoId && (
@@ -141,14 +135,6 @@ export function UsuariosAdminTab({
             disabled={!!editandoId}
             onChange={(e) => setEmail(e.target.value)}
             className="rounded-lg border border-slate-300 px-3 py-2 text-xs disabled:bg-slate-100 focus:border-slate-900 focus:outline-none"
-          />
-          <input
-            type="password"
-            inputMode="numeric"
-            placeholder={editandoId ? 'Nuevo PIN (opcional)' : 'PIN numérico (4-8)'}
-            value={pinNuevo}
-            onChange={(e) => setPinNuevo(e.target.value.replace(/\D/g, '').slice(0, 8))}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-slate-900 focus:outline-none"
           />
           <select
             value={rol}

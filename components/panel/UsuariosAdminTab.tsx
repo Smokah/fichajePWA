@@ -67,7 +67,6 @@ export function UsuariosAdminTab({
     setEditandoId(u.id);
     setNombre(u.nombre);
     setEmail(u.email);
-    setPinNuevo('');
     setRol(u.rol);
     setSucursalId(u.sucursal_id ? String(u.sucursal_id) : 'TODAS');
     setMensaje('');

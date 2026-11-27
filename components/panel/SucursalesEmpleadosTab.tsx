@@ -12,14 +12,12 @@ import {
 } from '@/app/actions/admin';
 
 interface SucursalesTabProps {
-  credenciales: { identificador: string; pin: string };
   sucursales: any[];
   empleados: any[];
   onRefresh: () => void;
 }
 
 export function SucursalesEmpleadosTab({
-  credenciales,
   sucursales,
   empleados,
   onRefresh,
@@ -41,7 +39,7 @@ export function SucursalesEmpleadosTab({
     if (!nuevaSucursal.trim()) return;
     startTransition(async () => {
       try {
-        await crearSucursalAdmin(credenciales, nuevaSucursal);
+        await crearSucursalAdmin(nuevaSucursal);
         setNuevaSucursal('');
         onRefresh();
       } catch (e) {
@@ -53,7 +51,7 @@ export function SucursalesEmpleadosTab({
   const handleGenerarCodigo = () => {
     startTransition(async () => {
       try {
-        const res = await generarCodigoSucursalAdmin(credenciales, sucursalCodigo, 30, 30);
+        const res = await generarCodigoSucursalAdmin(sucursalCodigo, 30, 30);
         setCodigoGenerado(res.codigoPlano);
         onRefresh();
       } catch (e) {
@@ -66,7 +64,7 @@ export function SucursalesEmpleadosTab({
     if (!confirm(`¿Rotar la clave de terminal QR de ${sucursal.nombre}? La pantalla actual deberá volver a vincularse.`)) return;
     startTransition(async () => {
       try {
-        await regenerarKioskKeySucursalAdmin(credenciales, sucursal.id);
+        await regenerarKioskKeySucursalAdmin(sucursal.id);
         onRefresh();
       } catch (e) {
         alert(e instanceof Error ? e.message : 'Error rotando clave de terminal');
@@ -85,7 +83,7 @@ export function SucursalesEmpleadosTab({
     if (!editId) return;
     startTransition(async () => {
       try {
-        await editarEmpleadoAdmin(credenciales, editId, {
+        await editarEmpleadoAdmin(editId, {
           nombre: editNombre,
           email: editEmail,
           sucursalId: editSucursalId ? Number(editSucursalId) : null,
@@ -102,7 +100,7 @@ export function SucursalesEmpleadosTab({
     if (!confirm(`¿Eliminar al empleado ${emp.nombre} y todo su historial de marcas?`)) return;
     startTransition(async () => {
       try {
-        await eliminarEmpleadoAdmin(credenciales, emp.id);
+        await eliminarEmpleadoAdmin(emp.id);
         onRefresh();
       } catch (e) {
         alert(e instanceof Error ? e.message : 'Error eliminando empleado');
@@ -114,7 +112,7 @@ export function SucursalesEmpleadosTab({
     if (!confirm(`¿Desvincular el dispositivo móvil de ${nombre}?`)) return;
     startTransition(async () => {
       try {
-        await resetearPasskeyEmpleado(credenciales, empleadoId);
+        await resetearPasskeyEmpleado(empleadoId);
         onRefresh();
       } catch (e) {
         alert(e instanceof Error ? e.message : 'Error desvinculando dispositivo');
